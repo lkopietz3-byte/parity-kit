@@ -190,8 +190,10 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     throw new ParityError('bad-options', `${WHAT}: option "bulkThreshold" must be an integer of zero or more`);
   }
   const bulkThreshold = (thresholdRaw) ?? DEFAULT_BULK_THRESHOLD;
+  const ignoredNames = new Set(ignoreFields);
+  const sourceNames = new Set(sourceFields);
   for (const name of [...sourceFields, ...(reviewerField === undefined ? [] : [reviewerField])]) {
-    if (ignoreFields.includes(name)) {
+    if (ignoredNames.has(name)) {
       throw new ParityError('bad-options', `${WHAT}: field "${name}" cannot be both evidence and ignored`);
     }
   }
@@ -265,7 +267,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
       if (evidenceSet !== null && !evidenceSet.has(f)) continue;
       if (!fieldEqual(bf.get(f), af.get(f))) {
         anyEvidence = true;
-        if (sourceFields.includes(f)) sourceChanged = true;
+        if (sourceNames.has(f)) sourceChanged = true;
       }
     }
     // Did the review date move?

@@ -205,7 +205,9 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 - A number token is digits with optional `,` thousands groups of exactly three digits, an optional `.` fraction and an optional exponent. `1,250` is 1250. A comma that does not start a three-digit group ends the token, so `chase,1.25,0.5` has three numbers.
 - It does **not** match inside a longer number or identifier: `11.256`, `21.25`, `1.255`, `0.125`, a dotted run such as `1.25.3` or `10.1.25.7`, `v1.25`, `x_1.25`, `abc1.25`, `1.25_x`, or a zero-padded run such as `08` or `007`. Letters after a number are fine (`1.25x`, `1.25c`).
 - A `-` is part of the number when it follows the start of the text, whitespace, an opening bracket or an operator. So `-1.25` is minus 1.25 and does not match a registered `1.25`, while `x-1.25` reads as 1.25.
-- A **string** `value`, and every entry in `forms`, is found as exact, case-sensitive text. The first and last character of the match are checked: a form that starts or ends with a letter or digit must not touch another letter, digit or underscore, and a form that starts or ends with a digit follows the same number-boundary rules as above.
+- A **string** `value`, and every entry in `forms`, is found as exact, case-sensitive text, and shares the number boundary rules above. A match may not begin or end strictly inside a number: `250` is not found in `1,250`, `8` and `1e` are not found in `1e+8`, `1.25` is found in `1.25,0.5`. A form that starts or ends with a digit must start or end exactly where a number starts or ends, with no letter, digit, underscore or non-ASCII decimal digit glued on (`v1.25`, `1.25_x` and `1.25６` are not hits). A form that starts or ends with anything else only has to not touch another letter, digit or underscore.
+- **Commas.** A comma followed by exactly three digits (and then a non-digit) continues a number as a thousands separator, so `1,250` is one number, 1250, and `1,250,5` is 1250 and 5. Any other comma ends the number, so `1,25` is 1 and 25, `1.25,0.5` is 1.25 and 0.5, and `12,34,567` is 12 and 34567. A list written like `1,250` is therefore read as one number; write a space after the comma.
+- A non-ASCII decimal digit (full-width, Arabic-Indic, Devanagari and so on) next to a number makes it part of a longer number, so nothing is found. Only ASCII digits spell a number.
 - If a numeric hit and a literal hit for the same constant overlap, the longer one is kept.
 - Scanning is linear in the length of the text for a fixed registry (an Aho-Corasick automaton for literal forms, one pass for numbers). Sorting the matches adds a log factor in the number of matches. Many heavily overlapping forms multiply the number of raw hits by the registry size.
 - Tiny integers are noisy. A registered `8` matches every standalone `8`. Prefer a `forms` entry with context such as `"8 points"`.
@@ -265,7 +267,7 @@ Limits (`limits: { maxRecords, maxNodes, maxDepth }`):
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. |
 | `maxNodes` | 10,000,000 | Most values read in one call. Arrays and objects are capped at a fifth of this. |
-| `maxDepth` | 64 (at most 1000) | Deepest nesting inside one record. |
+| `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
 Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. Comparison itself never recurses deeper than `maxDepth`.
 

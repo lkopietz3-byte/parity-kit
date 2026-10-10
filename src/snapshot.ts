@@ -171,7 +171,7 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
   }
   ctx.budget.containers += 1;
   if (ctx.budget.containers > ctx.budget.maxContainers) throw new BudgetExceeded('container limit');
-  if (depth >= ctx.budget.maxDepth) {
+  if (depth > ctx.budget.maxDepth) {
     throw unsupported(ctx, 'too-deep', `nesting is deeper than ${ctx.budget.maxDepth}`);
   }
   if (ctx.ancestors.has(object)) throw unsupported(ctx, 'cycle', 'the value contains itself');
@@ -309,7 +309,7 @@ function readRecord(
 ): void {
   ctx.ancestors.clear();
   ctx.trail.length = 0;
-  let id: Key | undefined = mode === 'object' ? (position) : undefined;
+  let id: Key | undefined = mode === 'object' ? position : undefined;
   const bad = (reason: InvalidReason, detail: string, path?: string): void => {
     const item: DatasetInvalid = { position, reason, detail };
     if (id !== undefined) item.id = id;
@@ -322,18 +322,21 @@ function readRecord(
       bad('not-an-object', `a record must be an object, got ${raw === null ? 'null' : Array.isArray(raw) ? 'an array' : typeof raw}`);
       return;
     }
-    if (!isPlainObject(raw)) {
-      bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
-      return;
-    }
-    // The key is read first and on its own, so a record whose other fields
-    // cannot be read still keeps its identity (and is never reported as missing).
+    // The key is read first and on its own, before anything else about the
+    // record is judged, so a record that turns out to be unreadable or not plain
+    // (a Proxy whose prototype lookup throws, a class instance) still keeps its
+    // identity and is never reported as missing.
     let keyValue: unknown;
     const keyDesc = Reflect.getOwnPropertyDescriptor(raw, cfg.key);
     if (keyDesc !== undefined) {
       ctx.trail.push(cfg.key);
       keyValue = slotValue(raw, { name: cfg.key, desc: keyDesc });
       ctx.trail.pop();
+    }
+    if (mode === 'array' && validKey(keyValue)) id = keyValue;
+    if (!isPlainObject(raw)) {
+      bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
+      return;
     }
     if (mode === 'array') {
       if (keyValue === undefined) {
@@ -417,17 +420,18 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       throw new ParityError('too-large', `${side} has ${keys.length} keys; the limit is ${budget.maxRecords}`);
     }
     spend(budget, keys.length);
-    const ids: string[] = [];
+    const slots: Array<{ id: string; desc: PropertyDescriptor }> = [];
     for (const key of keys) {
       if (typeof key !== 'string') continue;
+      // One descriptor read per property: the record comes from this descriptor.
       const desc = Reflect.getOwnPropertyDescriptor(input, key);
-      if (desc !== undefined && desc.enumerable === true) ids.push(key);
+      if (desc !== undefined && desc.enumerable === true) slots.push({ id: key, desc });
     }
-    ids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    for (const id of ids) {
+    slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const { id, desc } of slots) {
       let raw: unknown;
       try {
-        raw = readOwn(input, id);
+        raw = descriptorValue(input, desc);
       } catch (error) {
         invalid.push({ position: id, id, reason: 'unreadable', detail: `reading the property threw: ${describeError(error)}` });
         entries.push({ id, position: id, fields: undefined });

@@ -148,3 +148,34 @@ describe('1 MB of text', () => {
     expect(k.suspectKeys).toHaveLength(1)
   })
 })
+
+describe('field-name lists', () => {
+  const names = (n: number): string[] => Array.from({ length: n }, (_, i) => `field-${i}`)
+
+  it('compareMirror option lists stay linear', () => {
+    const run = (n: number) => () => compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v', ...names(n)], ignoreFields: names(n) })
+    expect(ratio(run(8000), run(32_000))).toBeLessThan(10)
+  })
+
+  it('auditReviewStamps option lists stay linear', () => {
+    const run = (n: number) => () =>
+      auditReviewStamps([{ id: 'a', reviewedOn: '2026-06-08' }], [{ id: 'a', reviewedOn: '2026-06-08' }], {
+        reviewedField: 'reviewedOn',
+        sourceFields: names(n),
+        valueFields: names(n),
+        ignoreFields: names(n).map((x) => `${x}-ignored`),
+      })
+    expect(ratio(run(8000), run(32_000))).toBeLessThan(10)
+  })
+
+  it('many source fields over many records stay linear in the records', () => {
+    const build = (n: number): [unknown[], unknown[]] => {
+      const before = Array.from({ length: n }, (_, i) => ({ id: `r${i}`, reviewedOn: '2026-06-08', s1: 1, s2: 2, s3: 3 }))
+      return [before, before.map((r) => ({ ...r, s2: 9, reviewedOn: '2026-10-10' }))]
+    }
+    const small = build(20_000)
+    const large = build(80_000)
+    const o = { reviewedField: 'reviewedOn', sourceFields: ['s1', 's2', 's3'] }
+    expect(ratio(() => auditReviewStamps(small[0], small[1], o), () => auditReviewStamps(large[0], large[1], o))).toBeLessThan(10)
+  })
+})

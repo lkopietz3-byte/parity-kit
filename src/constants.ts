@@ -68,6 +68,21 @@ interface NumberToken {
   value: number;
 }
 
+/** A run the number lexer found, whether or not it counts as a typed number. */
+interface LexedRun {
+  /** Index of the first digit (or of the "." of a leading-dot number). */
+  start: number;
+  end: number;
+  /** False for a zero-padded run, a dotted run, or one glued to letters, "_" or other digits. */
+  valid: boolean;
+  /** A letter, digit or underscore touches the start. */
+  leftGlued: boolean;
+  /** An underscore or a non-ASCII decimal digit touches the end. */
+  rightGlued: boolean;
+}
+
+const DECIMAL_DIGIT = /^\p{Nd}$/u;
+
 /** Characters before a "-" that make it a binary operator or a separator rather than a sign. */
 function minusIsSign(text: string, signIndex: number): boolean {
   const before = charBefore(text, signIndex);
@@ -86,7 +101,7 @@ function minusIsSign(text: string, signIndex: number): boolean {
  * the start of the text, a space, or an opening bracket or operator (the
  * Unicode minus sign counts too).
  */
-function* numberTokens(text: string): Generator<NumberToken> {
+function* lexNumbers(text: string): Generator<LexedRun> {
   const n = text.length;
   let i = 0;
   while (i < n) {
@@ -135,21 +150,46 @@ function* numberTokens(text: string): Generator<NumberToken> {
     }
     // Boundaries.
     const before = charBefore(text, start);
-    if (isWord(before)) valid = false;
-    if (j < n && text.charCodeAt(j) === 95) valid = false; // "_" glues the number to an identifier
-    if (valid) {
-      let tokenStart = start;
-      let negative = false;
-      if ((before === '-' || before === '\u2212') && minusIsSign(text, start - 1)) {
-        negative = true;
-        tokenStart = start - 1;
-      }
-      const raw = text.slice(start, j).replace(/,/g, '');
-      const value = Number(raw);
-      if (Number.isFinite(value)) yield { start: tokenStart, end: j, value: negative ? -value : value };
-    }
+    const leftGlued = isWord(before);
+    const after = j < n ? charAt(text, j) : '';
+    // "_" glues the number to an identifier; a non-ASCII digit makes it part of a longer number.
+    const rightGlued = after === '_' || (after !== '' && DECIMAL_DIGIT.test(after));
+    yield { start, end: j, valid: valid && !leftGlued && !rightGlued, leftGlued, rightGlued };
     i = j > i ? j : i + 1;
   }
+}
+
+/** The numbers a text spells, with their sign and value. */
+function* numberTokens(text: string): Generator<NumberToken> {
+  for (const run of lexNumbers(text)) {
+    if (!run.valid) continue;
+    let tokenStart = run.start;
+    let negative = false;
+    const before = charBefore(text, run.start);
+    if ((before === '-' || before === '\u2212') && minusIsSign(text, run.start - 1)) {
+      negative = true;
+      tokenStart = run.start - 1;
+    }
+    const value = Number(text.slice(run.start, run.end).replace(/,/g, ''));
+    if (Number.isFinite(value)) yield { start: tokenStart, end: run.end, value: negative ? -value : value };
+  }
+}
+
+const RUN_START = 1;
+const RUN_END = 2;
+const RUN_LEFT_GLUED = 4;
+const RUN_RIGHT_GLUED = 8;
+const RUN_INSIDE = 16;
+
+/** One byte per text position marking where the number lexer's runs start, end, and what lies strictly inside them. */
+function runFlags(text: string): Uint8Array {
+  const flags = new Uint8Array(text.length + 1);
+  for (const run of lexNumbers(text)) {
+    flags[run.start] = (flags[run.start] as number) | RUN_START | (run.leftGlued ? RUN_LEFT_GLUED : 0);
+    flags[run.end] = (flags[run.end] as number) | RUN_END | (run.rightGlued ? RUN_RIGHT_GLUED : 0);
+    for (let k = run.start + 1; k < run.end; k += 1) flags[k] = (flags[k] as number) | RUN_INSIDE;
+  }
+  return flags;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,28 +258,35 @@ class Automaton {
   }
 }
 
-/** Is a literal match at [start, end) a whole token, judged by its first and last characters? */
-function literalBoundariesOk(text: string, start: number, end: number): boolean {
+/** Does a literal form begin with a digit, or with "." followed by a digit? */
+function startsWithNumber(form: string): boolean {
+  const c = form.charCodeAt(0);
+  return isDigitCode(c) || (c === 46 && isDigitCode(form.charCodeAt(1)));
+}
+
+/**
+ * Is a literal match at [start, end) a whole token? A match must not begin or
+ * end strictly inside a number the lexer found, so `250` is not in `1,250`,
+ * `8` and `1e` are not in `1e+8`, and `1.25` is in `1.25,0.5`. A form that
+ * starts (or ends) with a digit must also sit exactly at the start (or end) of
+ * a run that no letter, digit or underscore is glued to, so forms and values
+ * share one boundary rule. Any other first or last character only has to not
+ * touch another letter, digit or underscore.
+ */
+function literalBoundariesOk(text: string, start: number, end: number, flags: Uint8Array): boolean {
+  if (((flags[start] as number) & RUN_INSIDE) !== 0 || ((flags[end] as number) & RUN_INSIDE) !== 0) return false;
   const first = charAt(text, start);
-  const before = charBefore(text, start);
-  if (isDigitCode(first.charCodeAt(0)) || first === '.') {
-    if (isDigitCode(before.charCodeAt(0))) return false;
-    if (isDigitCode(first.charCodeAt(0)) && isWord(before)) return false;
-    if (before === '.' && isDigitCode(charBefore(text, start - 1).charCodeAt(0))) return false;
-  } else if (isWord(first) && isWord(before)) {
+  if (startsWithNumber(first + charAt(text, start + first.length))) {
+    const f = flags[start] as number;
+    if ((f & RUN_START) === 0 || (f & RUN_LEFT_GLUED) !== 0) return false;
+  } else if (isWord(first) && isWord(charBefore(text, start))) {
     return false;
   }
   const last = charBefore(text, end);
-  const after = charAt(text, end);
   if (isDigitCode(last.charCodeAt(0))) {
-    if (isDigitCode(after.charCodeAt(0))) return false;
-    if ((after === '.' || after === ',') && isDigitCode(charAt(text, end + 1).charCodeAt(0))) return false;
-    if (after === '_') return false;
-    if (after === 'e' || after === 'E') {
-      const a = text.charCodeAt(end + 1);
-      if (isDigitCode(a) || ((a === 43 || a === 45) && isDigitCode(text.charCodeAt(end + 2)))) return false;
-    }
-  } else if (isWord(last) && isWord(after)) {
+    const f = flags[end] as number;
+    if ((f & RUN_END) === 0 || (f & RUN_RIGHT_GLUED) !== 0) return false;
+  } else if (isWord(last) && isWord(charAt(text, end))) {
     return false;
   }
   return true;
@@ -366,10 +413,11 @@ export function findHandTypedConstants(text: string, registry: readonly Register
     }
   }
   if (patterns.length > 0) {
+    const flags = runFlags(text);
     new Automaton(patterns).scan(text, (p, end) => {
       const pattern = patterns[p] as Pattern;
       const start = end - pattern.form.length;
-      if (literalBoundariesOk(text, start, end)) hits.push({ entry: pattern.entry, start, end, kind: 'form' });
+      if (literalBoundariesOk(text, start, end, flags)) hits.push({ entry: pattern.entry, start, end, kind: 'form' });
     });
   }
 

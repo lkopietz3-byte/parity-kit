@@ -969,3 +969,157 @@ describe('auditReviewStamps: whole-call problems throw ParityError', () => {
     expect(() => audit([], 'x')).toThrowError(expect.objectContaining({ code: 'bad-input' }) as Error)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fix round 1: rows added after review of 9bdd500
+// ---------------------------------------------------------------------------
+
+describe('findHandTypedConstants: literal forms share the number lexer boundaries', () => {
+  const texts = (text: string, registry: Parameters<typeof findHandTypedConstants>[1]): string[] =>
+    findHandTypedConstants(text, registry).map((m) => `${m.index}:${m.text}`)
+
+  it('a string-valued 1.25 is found in a comma-separated list', () => {
+    expect(texts('1.25,0.5', [{ id: 'a', value: '1.25' }])).toEqual(['0:1.25'])
+    expect(texts('chase,1.25,0.5', [{ id: 'a', value: '1.25' }])).toEqual(['6:1.25'])
+    expect(texts('1.25,0.5', [{ id: 'a', value: 1.25 }])).toEqual(['0:1.25'])
+    expect(texts('1.25,0.5', [{ id: 'a', value: '0.5' }])).toEqual(['5:0.5'])
+  })
+
+  it('a form that is the tail of a thousands-grouped number is not found', () => {
+    expect(texts('1,250', [{ id: 'a', value: 250, forms: ['250'] }])).toEqual([])
+    expect(texts('1,250', [{ id: 'a', value: '250' }])).toEqual([])
+    expect(texts('1,250', [{ id: 'a', value: '1' }])).toEqual([])
+  })
+
+  it('a form that is the head, tail or middle of an exponent number is not found', () => {
+    expect(texts('1e+8', [{ id: 'a', value: 8, forms: ['8'] }])).toEqual([])
+    expect(texts('1e+8', [{ id: 'a', value: '1' }])).toEqual([])
+    expect(texts('1e+8', [{ id: 'a', value: '1e' }])).toEqual([])
+  })
+
+  it('a form is found when it is exactly a token, including a grouped or exponent token', () => {
+    expect(texts('x 1,250 y', [{ id: 'a', value: 9, forms: ['1,250'] }])).toEqual(['2:1,250'])
+    expect(texts('x 1e+8 y', [{ id: 'a', value: 9, forms: ['1e+8'] }])).toEqual(['2:1e+8'])
+  })
+
+  it('a form with non-digit edges still checks only its own edges', () => {
+    expect(texts('rate 1.25 cents, 11.25 cents', [{ id: 'a', value: 9, forms: ['1.25 cents'] }])).toEqual(['5:1.25 cents'])
+    expect(texts('$1.25 and 1.25.3 and v1.25 and 1.25_x', [{ id: 'a', value: '$1.25' }])).toEqual(['0:$1.25'])
+  })
+
+  it('pins the tokenization of commas: a three-digit group is thousands, anything else separates', () => {
+    const v = (value: number): string[] => texts('1,250 | 1,25 | 1,250,5 | 12,34,567 | 1.25,0.5', [{ id: 'a', value }])
+    expect(v(1250)).toEqual(['0:1,250', '15:1,250'])
+    expect(v(250)).toEqual([])
+    expect(v(1)).toEqual(['8:1'])
+    expect(v(25)).toEqual(['10:25'])
+    expect(v(5)).toEqual(['21:5'])
+    expect(v(12)).toEqual(['25:12'])
+    expect(v(34567)).toEqual(['28:34,567'])
+    expect(v(1.25)).toEqual(['37:1.25'])
+    expect(v(0.5)).toEqual(['42:0.5'])
+  })
+
+  it('an adjacent non-ASCII decimal digit is part of a longer number, so nothing is found', () => {
+    for (const digit of ['６', '٣', '२']) {
+      expect(texts(`1.25${digit}`, [{ id: 'a', value: 1.25 }])).toEqual([])
+      expect(texts(`1.25${digit}`, [{ id: 'a', value: '1.25' }])).toEqual([])
+      expect(texts(`1.25${digit}`, [{ id: 'a', value: 9, forms: ['1.25'] }])).toEqual([])
+      expect(texts(`${digit}1.25`, [{ id: 'a', value: 1.25 }])).toEqual([])
+      expect(texts(`${digit}1.25`, [{ id: 'a', value: '1.25' }])).toEqual([])
+    }
+  })
+
+  it('a non-digit symbol after the number is still fine', () => {
+    expect(texts('1.25¢ and 1.25%', [{ id: 'a', value: '1.25' }])).toEqual(['0:1.25', '10:1.25'])
+  })
+})
+
+describe('compareMirror: the depth limit is inclusive', () => {
+  const nest = (levels: number, leaf: unknown): unknown => {
+    let v = leaf
+    for (let i = 0; i < levels; i += 1) v = { x: v }
+    return v
+  }
+  const reasons = (maxDepth: number, v: unknown): string[] =>
+    compareMirror([{ id: 'a', v }], [{ id: 'a', v }], { limits: { maxDepth } }).invalid.map((i) => i.reason)
+
+  it('maxDepth 1 allows a container directly in a field and rejects one inside it', () => {
+    expect(reasons(1, {})).toEqual([])
+    expect(reasons(1, [])).toEqual([])
+    expect(reasons(1, { x: 1 })).toEqual([])
+    expect(reasons(1, [1, 'a', null])).toEqual([])
+    expect(reasons(1, { x: {} })).toEqual(['too-deep', 'too-deep'])
+    expect(reasons(1, [[]])).toEqual(['too-deep', 'too-deep'])
+  })
+
+  it('maxDepth N allows exactly N levels of containers in a field', () => {
+    for (const n of [1, 2, 3, 10, 64]) {
+      expect(reasons(n, nest(n, 'leaf'))).toEqual([])
+      expect(reasons(n, nest(n + 1, 'leaf'))).toEqual(['too-deep', 'too-deep'])
+    }
+  })
+
+  it('the default depth is 64 levels', () => {
+    expect(compareMirror([{ id: 'a', v: nest(64, 1) }], [{ id: 'a', v: nest(64, 1) }]).ok).toBe(true)
+    expect(compareMirror([{ id: 'a', v: nest(65, 1) }], [{ id: 'a', v: nest(65, 1) }]).invalid).toHaveLength(2)
+  })
+})
+
+describe('compareMirror and auditReviewStamps: a revoked or hostile options object is a bad-options error', () => {
+  const revoked = (): object => {
+    const p = Proxy.revocable({}, {})
+    p.revoke()
+    return p.proxy
+  }
+  const code = (fn: () => unknown): unknown => {
+    try {
+      fn()
+    } catch (e) {
+      return (e as { code?: string }).code ?? (e as Error).name
+    }
+    return 'no error'
+  }
+
+  it('revoked proxy options', () => {
+    expect(code(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], revoked() as MirrorOptions))).toBe('bad-options')
+    expect(code(() => auditReviewStamps([{ id: 'a' }], [{ id: 'a' }], revoked() as StampOptions))).toBe('bad-options')
+  })
+
+  it('a revoked proxy as limits', () => {
+    expect(code(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { limits: revoked() }))).toBe('bad-options')
+  })
+
+  it('options whose getPrototypeOf throws', () => {
+    const p = new Proxy({}, { getPrototypeOf() { throw new Error('no prototype') } })
+    expect(code(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], p as MirrorOptions))).toBe('bad-options')
+  })
+})
+
+describe('compareMirror: a record keeps its identity when its prototype cannot be read', () => {
+  it('a Proxy whose getPrototypeOf throws is an unreadable record, not a missing one', () => {
+    const p = new Proxy({ id: 'a', v: 1 }, { getPrototypeOf() { throw new Error('no prototype') } })
+    const r = compareMirror([{ id: 'a', v: 1 }], [p])
+    expect(r.missing).toEqual([])
+    expect(r.extra).toEqual([])
+    expect(r.invalid).toMatchObject([{ side: 'mirror', id: 'a', reason: 'unreadable' }])
+    expect(r.status).toBe('unknown')
+  })
+
+  it('the same on the canonical side', () => {
+    const p = new Proxy({ id: 'a', v: 1 }, { getPrototypeOf() { throw new Error('no prototype') } })
+    const r = compareMirror([p], [{ id: 'a', v: 1 }])
+    expect(r.extra).toEqual([])
+    expect(r.missing).toEqual([])
+    expect(r.status).toBe('unknown')
+  })
+
+  it('a class instance with a readable id is invalid but not missing', () => {
+    class K {
+      id = 'a'
+    }
+    const r = compareMirror([{ id: 'a' }], [new K()])
+    expect(r.missing).toEqual([])
+    expect(r.invalid).toMatchObject([{ id: 'a', reason: 'not-a-plain-object' }])
+  })
+})

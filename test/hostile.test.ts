@@ -328,3 +328,46 @@ describe('findHandTypedConstants with hostile values', () => {
     expect(() => findHandTypedConstants(Object('1.25') as unknown as string, [])).toThrowError(expect.objectContaining({ code: 'bad-input' }) as Error)
   })
 })
+
+describe('a Proxy descriptor trap is consulted once per property', () => {
+  function countingProxy<T extends object>(target: T, lie: (key: string, call: number) => PropertyDescriptor | undefined): { proxy: T; calls: Map<string, number> } {
+    const calls = new Map<string, number>()
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(t, k) {
+        const key = String(k)
+        const n = (calls.get(key) ?? 0) + 1
+        calls.set(key, n)
+        return lie(key, n) ?? Reflect.getOwnPropertyDescriptor(t, k)
+      },
+    })
+    return { proxy, calls }
+  }
+
+  it('an option cannot change after it was observed', () => {
+    const before = Array.from({ length: 3 }, (_, i) => ({ id: `r${i}`, source: 's', reviewedOn: '2026-06-08' }))
+    const after = before.map((r) => ({ ...r, reviewedOn: '2026-10-10' }))
+    const { proxy, calls } = countingProxy(
+      { reviewedField: 'reviewedOn', sourceFields: ['source'], bulkThreshold: 0 },
+      (key, n) => (key === 'bulkThreshold' && n > 1 ? { value: 10, writable: true, enumerable: true, configurable: true } : undefined),
+    )
+    const r = auditReviewStamps(before, after, proxy)
+    expect(r.bulkBump).toMatchObject([{ count: 3 }])
+    for (const n of calls.values()) expect(n).toBe(1)
+  })
+
+  it('an id-keyed dataset is read from the descriptor seen during enumeration', () => {
+    const { proxy, calls } = countingProxy(
+      { a: { v: 1 }, b: { v: 2 } },
+      (key, n) => (key === 'b' && n > 1 ? { value: { v: 999 }, writable: true, enumerable: true, configurable: true } : undefined),
+    )
+    const r = compareMirror(proxy, { a: { v: 1 }, b: { v: 2 } })
+    expect(r.ok).toBe(true)
+    for (const n of calls.values()) expect(n).toBe(1)
+  })
+
+  it('options named limits are read once as well', () => {
+    const { proxy, calls } = countingProxy({ maxRecords: 5 }, () => undefined)
+    compareMirror([{ id: 'a' }], [{ id: 'a' }], { limits: proxy })
+    for (const n of calls.values()) expect(n).toBe(1)
+  })
+})

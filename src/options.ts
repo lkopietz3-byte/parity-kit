@@ -49,18 +49,19 @@ export function readOptions(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   if (options === undefined) return out;
-  if (!isPlainObject(options)) {
-    throw new ParityError('bad-options', `${what}: options must be a plain object`);
-  }
   try {
+    if (!isPlainObject(options)) {
+      throw new ParityError('bad-options', `${what}: options must be a plain object`);
+    }
     for (const name of Reflect.ownKeys(options)) {
       if (typeof name !== 'string') continue;
+      // One descriptor read per property: the value comes from this descriptor.
       const desc = Reflect.getOwnPropertyDescriptor(options, name);
       if (desc === undefined || desc.enumerable !== true) continue;
       if (!allowed.includes(name)) {
         throw new ParityError('bad-options', `${what}: unknown option "${name}"`);
       }
-      const value = readOwn(options, name);
+      const value = descriptorValue(options, desc);
       if (value !== undefined) out[name] = value;
     }
   } catch (error) {
@@ -104,10 +105,14 @@ export function optNames(
     const length = readOwn(v, 'length');
     if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 100_000) return fail();
     const out: string[] = [];
+    const seen = new Set<string>();
     for (let i = 0; i < length; i += 1) {
       const item = readOwn(v, String(i));
       if (typeof item !== 'string' || item === '') return fail();
-      if (!out.includes(item)) out.push(item);
+      if (!seen.has(item)) {
+        seen.add(item);
+        out.push(item);
+      }
     }
     return out;
   } catch (error) {
