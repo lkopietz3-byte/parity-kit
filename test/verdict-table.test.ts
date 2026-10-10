@@ -1,0 +1,971 @@
+import vm from 'node:vm'
+import { describe, expect, it } from 'vitest'
+import {
+  auditReviewStamps,
+  compareMirror,
+  findHandTypedConstants,
+  type MirrorOptions,
+  type StampOptions,
+} from '../src/index.js'
+import { program, programs, structuredCopy } from './helpers.js'
+
+// Verdict regression table. Honest inputs must pass; bad inputs must be
+// flagged with the named finding. Rows are never edited to get green.
+
+const reviewed = { reviewedField: 'reviewedOn' } satisfies MirrorOptions
+
+// ---------------------------------------------------------------------------
+// compareMirror: honest mirrors pass
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: an honest mirror passes', () => {
+  const canon = [program(1), program(2), program(3)]
+  const honest: Array<[string, unknown, unknown, MirrorOptions?]> = [
+    ['identical arrays', canon, structuredCopy(canon)],
+    ['same records in another order', canon, [...structuredCopy(canon)].reverse()],
+    ['keys of a record in another order', canon, canon.map((r) => Object.fromEntries(Object.entries(r).reverse()))],
+    ['array vs id-keyed object', canon, Object.fromEntries(canon.map((r) => [r.id, structuredCopy(r)]))],
+    ['id-keyed object whose records repeat the id', Object.fromEntries(canon.map((r) => [r.id, r])), Object.fromEntries(canon.map((r) => [r.id, r]))],
+    ['null-prototype records', canon, canon.map((r) => Object.assign(Object.create(null) as object, r))],
+    ['a numeric id', [{ id: 7, v: 1 }], [{ id: 7, v: 1 }]],
+    ['-0 equals 0', [{ id: 'a', v: 0 }], [{ id: 'a', v: -0 }]],
+    ['NaN equals NaN', [{ id: 'a', v: NaN }], [{ id: 'a', v: NaN }]],
+    ['nested arrays and objects', [{ id: 'a', t: { a: [1, { b: 'x' }], c: null } }], [{ id: 'a', t: { c: null, a: [1, { b: 'x' }] } }]],
+    ['a property that is undefined is absent', [{ id: 'a', v: 1 }], [{ id: 'a', v: 1, w: undefined }]],
+    ['equal Dates', [{ id: 'a', d: new Date('2026-06-08T00:00:00Z') }], [{ id: 'a', d: new Date('2026-06-08T00:00:00Z') }]],
+    ['two invalid Dates', [{ id: 'a', d: new Date(NaN) }], [{ id: 'a', d: new Date(NaN) }]],
+    ['a Date from another realm', [{ id: 'a', d: new Date(5) }], [{ id: 'a', d: vm.runInNewContext('new Date(5)') }]],
+    ['a whole record set from another realm', canon, vm.runInNewContext(JSON.stringify(canon))],
+    ['a tolerance absorbs rounding', [{ id: 'a', v: 1.25 }], [{ id: 'a', v: 1.2500004 }], { numberTolerance: 1e-6 }],
+    ['an ignored field may differ', [{ id: 'a', v: 1, note: 'x' }], [{ id: 'a', v: 1, note: 'y' }], { ignoreFields: ['note'] }],
+    ['an unlisted field may differ when fields is set', [{ id: 'a', v: 1, note: 'x' }], [{ id: 'a', v: 1, note: 'y' }], { fields: ['v'] }],
+    ['a different key field name', [{ slug: 'a', v: 1 }], [{ slug: 'a', v: 1 }], { key: 'slug' }],
+    ['both empty with allowEmpty', [], [], { allowEmpty: true }],
+    ['same review date and same values', canon, structuredCopy(canon), reviewed],
+    ['a mirror that tracks a legitimate update', [program(1, { baselineCpp: 1.5, reviewedOn: '2026-07-01' })], [program(1, { baselineCpp: 1.5, reviewedOn: '2026-07-01' })], reviewed],
+    ['look-alike keys that are the same key', [{ id: 'café', v: 1 }], [{ id: 'café', v: 1 }]],
+  ]
+  it.each(honest)('%s', (_name, a, b, options) => {
+    const r = compareMirror(a, b, options)
+    expect(r.status).toBe('ok')
+    expect(r.ok).toBe(true)
+    expect(r.missing).toEqual([])
+    expect(r.extra).toEqual([])
+    expect(r.changed).toEqual([])
+    expect(r.invalid).toEqual([])
+    expect(r.suspectKeys).toEqual([])
+    expect(r.duplicateKeys).toEqual([])
+  })
+
+  it('counts the records it compared', () => {
+    expect(compareMirror(canon, structuredCopy(canon)).compared).toBe(3)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// compareMirror: drift and set differences are flagged
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: drift is flagged', () => {
+  it('1.25 vs 1.0 with the same review date: changed AND the stamp hides it', () => {
+    const canonical = [program(1, { id: 'chase-ur', baselineCpp: 1.25, reviewedOn: '2026-06-08' })]
+    const mirror = [program(1, { id: 'chase-ur', baselineCpp: 1.0, reviewedOn: '2026-06-08' })]
+    const r = compareMirror(canonical, mirror, reviewed)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('flagged')
+    expect(r.changed).toEqual([{ id: 'chase-ur', field: 'baselineCpp', change: 'different', canonical: 1.25, mirror: 1 }])
+    expect(r.stampHidesDrift).toEqual([{ id: 'chase-ur', reviewedValue: '2026-06-08', fields: ['baselineCpp'] }])
+  })
+
+  it('1.25 vs 1.0 with different review dates: changed, but no stamp is hiding it', () => {
+    const r = compareMirror(
+      [program(1, { id: 'a', baselineCpp: 1.25, reviewedOn: '2026-06-08' })],
+      [program(1, { id: 'a', baselineCpp: 1.0, reviewedOn: '2026-05-01' })],
+      reviewed,
+    )
+    expect(r.status).toBe('flagged')
+    expect(r.changed.map((c) => c.field)).toEqual(['baselineCpp', 'reviewedOn'])
+    expect(r.stampHidesDrift).toEqual([])
+  })
+
+  it('treats the same instant written two ways as the same review date', () => {
+    const r = compareMirror(
+      [{ id: 'a', v: 1, reviewedOn: '2026-06-09' }],
+      [{ id: 'a', v: 2, reviewedOn: '2026-06-09T01:00:00+01:00' }],
+      reviewed,
+    )
+    expect(r.stampHidesDrift.map((s) => s.id)).toEqual(['a'])
+  })
+
+  it('does not call a missing review date a hidden stamp', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }], reviewed)
+    expect(r.stampHidesDrift).toEqual([])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('exact by default: 1.25 vs 1.0000001 differs', () => {
+    expect(compareMirror([{ id: 'a', v: 1.25 }], [{ id: 'a', v: 1.2500001 }]).changed).toHaveLength(1)
+  })
+
+  it('a tolerance too small to cover the gap still flags it', () => {
+    const r = compareMirror([{ id: 'a', v: 1.25 }], [{ id: 'a', v: 1.0 }], { numberTolerance: 0.1 })
+    expect(r.changed).toHaveLength(1)
+  })
+
+  it('a tolerance never makes a string equal a number', () => {
+    expect(compareMirror([{ id: 'a', v: 1.25 }], [{ id: 'a', v: '1.25' }], { numberTolerance: 5 }).changed).toHaveLength(1)
+  })
+
+  const typeDiffs: Array<[string, unknown, unknown]> = [
+    ['number vs numeric string', 1.25, '1.25'],
+    ['number vs bigint', 1, 1n],
+    ['null vs 0', null, 0],
+    ['null vs empty string', null, ''],
+    ['false vs 0', false, 0],
+    ['Infinity vs a big number', Infinity, 1e308],
+    ['NaN vs null', NaN, null],
+    ['Date vs its ISO string', new Date('2026-06-08T00:00:00Z'), '2026-06-08T00:00:00.000Z'],
+    ['array vs object', [1], { 0: 1 }],
+    ['[1,2] vs [2,1]', [1, 2], [2, 1]],
+    ['[] vs {}', [], {}],
+    ['a longer array', [1], [1, 1]],
+    ['nested difference', { a: { b: 1 } }, { a: { b: 2 } }],
+    ['NFC vs NFD in a value', 'café', 'café'],
+    ['zero-width in a value', 'abc', 'abc​'],
+    ['trailing space in a value', 'abc', 'abc '],
+    ['look-alike letter in a value', 'a', 'а'],
+    ['lone surrogate vs replacement', '\ud800', '�'],
+    ['different Dates', new Date(1), new Date(2)],
+  ]
+  it.each(typeDiffs)('flags a value difference: %s', (_name, a, b) => {
+    const r = compareMirror([{ id: 'a', v: a }], [{ id: 'a', v: b }])
+    expect(r.status).toBe('flagged')
+    expect(r.changed.map((c) => c.field)).toEqual(['v'])
+  })
+
+  it('a field present in only one copy is reported as such', () => {
+    const r = compareMirror([{ id: 'a', v: 1, w: null }], [{ id: 'a', v: 1, x: 2 }])
+    expect(r.changed).toEqual([
+      { id: 'a', field: 'w', change: 'missing-in-mirror', canonical: null, mirror: undefined },
+      { id: 'a', field: 'x', change: 'extra-in-mirror', canonical: undefined, mirror: 2 },
+    ])
+  })
+
+  it('reports a missing record', () => {
+    const r = compareMirror([program(1), program(2)], [program(1)])
+    expect(r.missing).toEqual([program(2).id])
+    expect(r.extra).toEqual([])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('reports an extra record', () => {
+    const r = compareMirror([program(1)], [program(1), program(2)])
+    expect(r.extra).toEqual([program(2).id])
+    expect(r.missing).toEqual([])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('an empty mirror misses every record', () => {
+    const r = compareMirror([program(1), program(2)], [])
+    expect(r.missing).toHaveLength(2)
+  })
+
+  it('a mirror with no overlap is all missing and all extra', () => {
+    const r = compareMirror([program(1)], [program(2)])
+    expect(r.missing).toEqual([program(1).id])
+    expect(r.extra).toEqual([program(2).id])
+  })
+
+  it('a null-prototype record with drift is flagged like any other', () => {
+    const drifted = Object.assign(Object.create(null) as object, { id: 'a', v: 2 })
+    expect(compareMirror([{ id: 'a', v: 1 }], [drifted]).changed).toHaveLength(1)
+  })
+
+  it('a record whose own key is __proto__ is data, not a prototype', () => {
+    const canonical = JSON.parse('[{"id":"a","__proto__":{"v":1}}]') as unknown
+    const mirror = JSON.parse('[{"id":"a","__proto__":{"v":2}}]') as unknown
+    const r = compareMirror(canonical, mirror)
+    expect(r.changed.map((c) => c.field)).toEqual(['__proto__'])
+    expect(({} as Record<string, unknown>)['v']).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// compareMirror: keys
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: look-alike keys are reported, never merged', () => {
+  const lookAlikes: Array<[string, string, string]> = [
+    ['NFC vs NFD', 'café', 'café'],
+    ['a trailing space', 'chase-ur', 'chase-ur '],
+    ['a leading space', 'chase-ur', ' chase-ur'],
+    ['a no-break space', 'chase ur', 'chase ur'],
+    ['a zero-width space', 'chase-ur', 'chase​-ur'],
+    ['a zero-width joiner', 'chase-ur', 'chase-‍ur'],
+    ['a byte order mark', 'chase-ur', '﻿chase-ur'],
+    ['a soft hyphen', 'chase-ur', 'chase­-ur'],
+    ['upper case', 'chase-ur', 'Chase-UR'],
+    ['a Cyrillic a', 'amex-gold', 'amеx-gold'],
+    ['a Cyrillic c', 'chase-ur', 'сhase-ur'],
+    ['a Greek omicron', 'bonvoy', 'bοnvoy'],
+    ['a non-breaking hyphen', 'chase-ur', 'chase‑ur'],
+    ['an en dash', 'chase-ur', 'chase\u2013ur'],
+    ['full-width letters', 'chase', 'ｃｈａｓｅ'],
+    ['a ligature', 'office', 'oﬃce'],
+  ]
+  it.each(lookAlikes)('%s: missing + extra + suspectKeys', (_name, a, b) => {
+    const r = compareMirror([{ id: a, v: 1 }], [{ id: b, v: 1 }])
+    expect(r.status).toBe('flagged')
+    expect(r.missing).toEqual([a])
+    expect(r.extra).toEqual([b])
+    expect(r.compared).toBe(0)
+    expect(r.suspectKeys).toHaveLength(1)
+    expect(r.suspectKeys[0]?.keys).toEqual([
+      { side: 'canonical', key: a },
+      { side: 'mirror', key: b },
+    ])
+  })
+
+  it('the number 1 and the string "1" are different keys and look alike', () => {
+    const r = compareMirror([{ id: 1, v: 1 }], [{ id: '1', v: 1 }])
+    expect(r.missing).toEqual([1])
+    expect(r.extra).toEqual(['1'])
+    expect(r.suspectKeys).toHaveLength(1)
+  })
+
+  it('look-alikes inside the canonical set alone are reported', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'A' }], [{ id: 'a' }, { id: 'A' }])
+    expect(r.suspectKeys).toHaveLength(1)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+  })
+
+  it('foldCase false lets keys that differ only by case stand', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'A' }], [{ id: 'a' }, { id: 'A' }], { foldCase: false })
+    expect(r.suspectKeys).toEqual([])
+    expect(r.ok).toBe(true)
+  })
+
+  it('a space is not a look-alike for nothing, or for a hyphen', () => {
+    const ids = [{ id: 'chase ur' }, { id: 'chaseur' }, { id: 'chase-ur' }]
+    expect(compareMirror(ids, ids).suspectKeys).toEqual([])
+  })
+
+  it('distinct keys are not look-alikes', () => {
+    expect(compareMirror([{ id: 'chase-ur' }, { id: 'chase-sapphire' }], [{ id: 'chase-ur' }, { id: 'chase-sapphire' }]).suspectKeys).toEqual([])
+  })
+
+  it('reports a duplicate key and does not compare that id', () => {
+    const r = compareMirror(
+      [{ id: 'a', v: 1 }],
+      [{ id: 'a', v: 1 }, { id: 'a', v: 2 }],
+    )
+    expect(r.duplicateKeys).toEqual([{ side: 'mirror', id: 'a', positions: [0, 1] }])
+    expect(r.status).toBe('flagged')
+    expect(r.missing).toEqual([])
+    expect(r.compared).toBe(0)
+  })
+
+  it('reports a duplicate key in the canonical set', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'a' }], [{ id: 'a' }])
+    expect(r.duplicateKeys).toEqual([{ side: 'canonical', id: 'a', positions: [0, 1] }])
+  })
+
+  it('an object-keyed record whose id field disagrees with its property is invalid', () => {
+    const r = compareMirror({ a: { id: 'b', v: 1 } }, { a: { id: 'a', v: 1 } })
+    expect(r.invalid).toMatchObject([{ side: 'canonical', position: 'a', id: 'a', reason: 'key-mismatch' }])
+    expect(r.ok).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// compareMirror: records that cannot be read are "can't tell", not a pass
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: unreadable records are invalid, never a pass', () => {
+  class Klass {
+    id = 'a'
+  }
+  const cyc: Record<string, unknown> = { id: 'a' }
+  cyc['self'] = cyc
+  const sparse = new Array<unknown>(2)
+  sparse[0] = { id: 'a' }
+  const bad: Array<[string, unknown, string]> = [
+    ['null', null, 'not-an-object'],
+    ['a string', 'a', 'not-an-object'],
+    ['a number', 7, 'not-an-object'],
+    ['an array', ['a'], 'not-an-object'],
+    ['a class instance', new Klass(), 'not-a-plain-object'],
+    ['a Map', new Map([['id', 'a']]), 'not-a-plain-object'],
+    ['a Date', new Date(), 'not-a-plain-object'],
+    ['a record without a key', { v: 1 }, 'missing-key'],
+    ['a record with an undefined key', { id: undefined, v: 1 }, 'missing-key'],
+    ['a null key', { id: null }, 'bad-key'],
+    ['an empty key', { id: '' }, 'bad-key'],
+    ['a blank key', { id: '   ' }, 'bad-key'],
+    ['a NaN key', { id: NaN }, 'bad-key'],
+    ['an Infinity key', { id: Infinity }, 'bad-key'],
+    ['an object key', { id: { x: 1 } }, 'bad-key'],
+    ['a boolean key', { id: true }, 'bad-key'],
+    ['a function value', { id: 'a', f: () => 1 }, 'unsupported-value'],
+    ['an own toJSON method', { id: 'a', toJSON: () => ({ id: 'a' }) }, 'unsupported-value'],
+    ['a symbol value', { id: 'a', s: Symbol('x') }, 'unsupported-value'],
+    ['a Map value', { id: 'a', m: new Map() }, 'unsupported-value'],
+    ['a class-instance value', { id: 'a', k: new Klass() }, 'unsupported-value'],
+    ['a Date-like object', { id: 'a', d: { getTime: () => 5 } }, 'unsupported-value'],
+    ['a cyclic record', cyc, 'cycle'],
+    ['a sparse array inside a record', { id: 'a', list: new Array<number>(3) }, 'hole'],
+    ['a throwing getter', { id: 'a', get v(): number { throw new Error('boom') } }, 'unreadable'],
+    ['a record that is a revoked proxy', (() => { const p = Proxy.revocable({}, {}); p.revoke(); return p.proxy })(), 'unreadable'],
+    ['a record whose ownKeys trap throws', new Proxy({ id: 'a' }, { ownKeys() { throw new Error('no keys') } }), 'unreadable'],
+    ['a record whose descriptor trap throws', new Proxy({ id: 'a' }, { getOwnPropertyDescriptor() { throw new Error('no desc') } }), 'unreadable'],
+  ]
+  it.each(bad)('%s', (_name, record, reason) => {
+    const r = compareMirror([record], [record], { allowEmpty: true })
+    expect(r.ok).toBe(false)
+    expect(r.invalid.map((i) => i.reason)).toContain(reason)
+    expect(r.status === 'unknown' || r.status === 'flagged').toBe(true)
+  })
+
+  it('a hole in the records array is invalid', () => {
+    const r = compareMirror(sparse, sparse)
+    expect(r.invalid.map((i) => `${i.side}:${String(i.position)}:${i.reason}`)).toEqual(['canonical:1:hole', 'mirror:1:hole'])
+  })
+
+  it('one bad record does not hide a real difference in another', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }, null], [{ id: 'a', v: 2 }, null])
+    expect(r.changed).toHaveLength(1)
+    expect(r.invalid).toHaveLength(2)
+  })
+
+  it('a bad record with a readable id does not make that id missing', () => {
+    const r = compareMirror([{ id: 'a', f: () => 1 }], [{ id: 'a', f: () => 1 }])
+    expect(r.missing).toEqual([])
+    expect(r.extra).toEqual([])
+    expect(r.invalid).toHaveLength(2)
+  })
+
+  it('an invalid mirror record is never reported as matching', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: () => 1 }])
+    expect(r.ok).toBe(false)
+    expect(r.compared).toBe(0)
+  })
+
+  it('an empty canonical set is reported unless allowEmpty is set', () => {
+    const r = compareMirror([], [])
+    expect(r.ok).toBe(false)
+    expect(r.invalid).toMatchObject([{ side: 'canonical', position: null, reason: 'empty-dataset' }])
+  })
+
+  it('an empty mirror under a real canonical set is all missing, not a pass', () => {
+    expect(compareMirror([{ id: 'a' }], []).ok).toBe(false)
+    expect(compareMirror({}, {}, { allowEmpty: true }).ok).toBe(true)
+  })
+
+  it('values nested deeper than maxDepth are invalid, not a stack overflow', () => {
+    let deep: unknown = 'leaf'
+    for (let i = 0; i < 100_000; i += 1) deep = [deep]
+    const r = compareMirror([{ id: 'a', deep }], [{ id: 'a', deep }])
+    expect(r.invalid.map((i) => i.reason)).toEqual(['too-deep', 'too-deep'])
+    expect(r.ok).toBe(false)
+  })
+
+  it('nesting within maxDepth is compared normally', () => {
+    let deep: unknown = 'leaf'
+    for (let i = 0; i < 30; i += 1) deep = { x: deep }
+    expect(compareMirror([{ id: 'a', deep }], [{ id: 'a', deep }]).ok).toBe(true)
+  })
+
+  it('a raised maxDepth is honored up to the hard cap', () => {
+    let deep: unknown = 'leaf'
+    for (let i = 0; i < 200; i += 1) deep = [deep]
+    expect(compareMirror([{ id: 'a', deep }], [{ id: 'a', deep }], { limits: { maxDepth: 300 } }).ok).toBe(true)
+    expect(() => compareMirror([], [], { limits: { maxDepth: 5000 } })).toThrow(/maxDepth/)
+  })
+
+  it('a wide shared structure cannot blow up the work (value budget)', () => {
+    let shared: unknown = 1
+    for (let i = 0; i < 40; i += 1) shared = [shared, shared]
+    expect(() => compareMirror([{ id: 'a', shared }], [{ id: 'a', shared }], { limits: { maxNodes: 200_000 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+
+  it('the same structure at the default limits also ends in too-large (it takes a few seconds)', () => {
+    let shared: unknown = 1
+    for (let i = 0; i < 40; i += 1) shared = [shared, shared]
+    expect(() => compareMirror([{ id: 'a', shared }], [{ id: 'a', shared }])).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  }, 60_000)
+})
+
+// ---------------------------------------------------------------------------
+// compareMirror: arguments that are wrong as a whole throw ParityError
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: whole-call problems throw ParityError', () => {
+  const badInputs: Array<[string, unknown, string]> = [
+    ['null', null, 'bad-input'],
+    ['undefined', undefined, 'bad-input'],
+    ['a string', 'id', 'bad-input'],
+    ['a number', 5, 'bad-input'],
+    ['a Map', new Map(), 'bad-input'],
+    ['a Set', new Set(), 'bad-input'],
+    ['a function', () => [], 'bad-input'],
+    ['a class instance', new (class Foo {})(), 'bad-input'],
+    ['a Promise', Promise.resolve([]), 'bad-input'],
+    ['a typed array', new Uint8Array(2), 'bad-input'],
+    ['an array with a length that throws', new Proxy([], { get(_t, p) { if (p === 'length') throw new Error('x'); return undefined }, getOwnPropertyDescriptor() { throw new Error('x') } }), 'unreadable-input'],
+    ['a revoked proxy', (() => { const p = Proxy.revocable([], {}); p.revoke(); return p.proxy })(), 'unreadable-input'],
+    ['an object whose ownKeys throws', new Proxy({}, { ownKeys() { throw new Error('x') } }), 'unreadable-input'],
+    ['a sparse array claiming a billion slots', new Array(1_000_000_000), 'too-large'],
+  ]
+  it.each(badInputs)('canonical = %s', (_name, input, code) => {
+    expect(() => compareMirror(input, [])).toThrowError(expect.objectContaining({ name: 'ParityError', code }) as Error)
+    expect(() => compareMirror([], input)).toThrowError(expect.objectContaining({ name: 'ParityError', code }) as Error)
+  })
+
+  const badOptions: Array<[string, unknown]> = [
+    ['an unknown option (typo)', { ignoreField: ['x'] }],
+    ['options that are not an object', 'fast'],
+    ['options that are an array', []],
+    ['a numeric key', { key: 5 }],
+    ['an empty key', { key: '' }],
+    ['fields that are not an array', { fields: 'v' }],
+    ['fields with a non-string', { fields: ['v', 5] }],
+    ['fields with an empty name', { fields: [''] }],
+    ['a negative tolerance', { numberTolerance: -1 }],
+    ['a NaN tolerance', { numberTolerance: NaN }],
+    ['an Infinity tolerance', { numberTolerance: Infinity }],
+    ['a string tolerance', { numberTolerance: '0.1' }],
+    ['allowEmpty that is not a boolean', { allowEmpty: 'yes' }],
+    ['limits that are not an object', { limits: 5 }],
+    ['an unknown limit', { limits: { maxRows: 5 } }],
+    ['a zero maxRecords', { limits: { maxRecords: 0 } }],
+    ['a fractional maxNodes', { limits: { maxNodes: 1.5 } }],
+  ]
+  it.each(badOptions)('%s', (_name, options) => {
+    expect(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], options as MirrorOptions)).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('an options getter that throws is a bad-options error', () => {
+    const options = { get key(): string { throw new Error('x') } }
+    expect(() => compareMirror([], [], options)).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+
+  it('maxRecords is enforced', () => {
+    expect(() => compareMirror(programs(11), programs(11), { limits: { maxRecords: 10 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+
+  it('maxNodes is enforced', () => {
+    expect(() => compareMirror(programs(100), programs(100), { limits: { maxNodes: 50 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// findHandTypedConstants
+// ---------------------------------------------------------------------------
+
+describe('findHandTypedConstants: token boundaries', () => {
+  const reg = [{ id: 'cpp', value: 1.25 }]
+  const found: Array<[string, string]> = [
+    ['a plain number', 'earns 1.25 cents per point'],
+    ['a trailing zero', 'earns 1.250 cents'],
+    ['a dollar sign', 'costs $1.25 each'],
+    ['brackets', 'value (1.25) here'],
+    ['a unit glued on', 'a 1.25x multiplier'],
+    ['a cent sign', 'worth 1.25¢'],
+    ['a sentence end', 'it is 1.25.'],
+    ['a comma after', 'rates 1.25, 2.5'],
+    ['a csv cell', 'chase,1.25,0.5'],
+    ['code', 'const cpp = 1.25;'],
+    ['a json value', '{"baselineCpp":1.25}'],
+    ['an operator before', 'pts*1.25'],
+    ['a subtraction', 'x-1.25'],
+    ['the start of the text', '1.25 is it'],
+    ['the end of the text', 'is it 1.25'],
+    ['a newline after', 'is 1.25\nnext'],
+    ['an exponent spelling', 'about 125e-2 points'],
+    ['an emoji before', '🙂1.25'],
+  ]
+  it.each(found)('finds 1.25 in %s', (_name, text) => {
+    const m = findHandTypedConstants(text, reg)
+    expect(m).toHaveLength(1)
+    expect(m[0]?.id).toBe('cpp')
+  })
+
+  const notFound: Array<[string, string]> = [
+    ['11.256', 'rate 11.256 here'],
+    ['21.25', 'rate 21.25 here'],
+    ['1.255', 'rate 1.255 here'],
+    ['0.125', 'rate 0.125 here'],
+    ['1.2', 'rate 1.2 here'],
+    ['a version 1.25.3', 'version 1.25.3 here'],
+    ['a version 3.1.25', 'version 3.1.25 here'],
+    ['an address 10.1.25.7', 'host 10.1.25.7 here'],
+    ['v1.25', 'tag v1.25 here'],
+    ['an identifier x_1.25', 'x_1.25 here'],
+    ['an identifier 1.25_x', '1.25_x here'],
+    ['a longer exponent 1.25e3', 'size 1.25e3 here'],
+    ['a negative number', 'delta -1.25 here'],
+    ['thousands 1,1.25', 'sum 1,111.25 here'],
+    ['a digit run', 'id 1125 here'],
+    ['a date-like run', 'on 2026-06-08 here'],
+    ['a dotted date 1.25.2026', 'on 1.25.2026 here'],
+    ['letters before the digits', 'abc1.25 here'],
+  ]
+  it.each(notFound)('does not find 1.25 inside %s', (_name, text) => {
+    expect(findHandTypedConstants(text, reg)).toEqual([])
+  })
+
+  it('finds a leading-dot number and a Unicode minus', () => {
+    const half = [{ id: 'half', value: 0.5 }]
+    expect(findHandTypedConstants('a .5, (.5), 0.5, x.5, 10.5, 1.5', half).map((x) => x.text)).toEqual(['.5', '.5', '0.5'])
+    const neg = [{ id: 'neg', value: -1.25 }]
+    expect(findHandTypedConstants('x = \u22121.25 and 1.25', neg).map((x) => x.text)).toEqual(['\u22121.25'])
+  })
+
+  it('reports line and column (1-based) for LF, CRLF and CR line ends', () => {
+    const text = 'a\nbb 1.25\r\nccc 1.25\rd 1.25'
+    const m = findHandTypedConstants(text, reg)
+    expect(m.map((x) => [x.line, x.column, x.text])).toEqual([
+      [2, 4, '1.25'],
+      [3, 5, '1.25'],
+      [4, 3, '1.25'],
+    ])
+    expect(m.map((x) => text.slice(x.index, x.index + x.text.length))).toEqual(['1.25', '1.25', '1.25'])
+  })
+
+  it('counts columns in UTF-16 code units', () => {
+    expect(findHandTypedConstants('🙂 1.25', reg)[0]).toMatchObject({ line: 1, column: 4, index: 3 })
+  })
+
+  it('finds every occurrence, in order, tagged by constant', () => {
+    const m = findHandTypedConstants('a 2 b 1.25 c 2 d 1.25', [
+      { id: 'two', value: 2 },
+      { id: 'cpp', value: 1.25 },
+    ])
+    expect(m.map((x) => x.id)).toEqual(['two', 'cpp', 'two', 'cpp'])
+  })
+
+  it('matches integers by value and by token, never inside a longer number', () => {
+    const r = [{ id: 'eight', value: 8 }]
+    expect(findHandTypedConstants('page 8, 08, 18, 8.5, 80 and 8', r).map((x) => x.index)).toEqual([5, 28])
+  })
+
+  it('matches a negative registry value only when it is typed negative', () => {
+    const r = [{ id: 'delta', value: -1.25 }]
+    expect(findHandTypedConstants('x = -1.25; y = 1.25; z-1.25', r).map((x) => x.text)).toEqual(['-1.25'])
+  })
+
+  it('reads thousands groups and exponents as the number they spell', () => {
+    const r = [{ id: 'big', value: 1250 }]
+    expect(findHandTypedConstants('1,250 and 1250 and 1.25e3 and 1,25 and 12,500', r).map((x) => x.text)).toEqual(['1,250', '1250', '1.25e3'])
+  })
+
+  it('finds a string constant as exact text on word boundaries', () => {
+    const r = [{ id: 'prog', value: 'chase-ur' }]
+    const m = findHandTypedConstants('use chase-ur, (chase-ur) not xchase-ur or chase-urx or Chase-UR', r)
+    expect(m.map((x) => x.index)).toEqual([4, 15])
+    expect(m.every((x) => x.kind === 'form')).toBe(true)
+  })
+
+  it('finds extra forms, and keeps the longer of an overlapping pair', () => {
+    const r = [{ id: 'cpp', value: 1.25, forms: ['1.25 cents', '1,25'] }]
+    const m = findHandTypedConstants('worth 1.25 cents or 1,25 or 1.25', r)
+    expect(m.map((x) => [x.text, x.kind])).toEqual([
+      ['1.25 cents', 'form'],
+      ['1,25', 'form'],
+      ['1.25', 'number'],
+    ])
+  })
+
+  it('forms keep the number boundary rules', () => {
+    const r = [{ id: 'cpp', value: 9, forms: ['1.25'] }]
+    expect(findHandTypedConstants('11.256 and 1.25.3 and v1.25 and 1.25', r).map((x) => x.index)).toEqual([32])
+  })
+
+  it('finds nothing in empty text and nothing for an empty registry', () => {
+    expect(findHandTypedConstants('', [{ id: 'a', value: 1 }])).toEqual([])
+    expect(findHandTypedConstants('1.25', [])).toEqual([])
+  })
+
+  it('handles lone surrogates in the text', () => {
+    expect(findHandTypedConstants('\ud800 1.25 \udc00', reg)).toHaveLength(1)
+    expect(findHandTypedConstants('𐀀1.25', reg)).toEqual([])
+  })
+
+  it('two constants with the same value are both reported', () => {
+    const m = findHandTypedConstants('1.25', [{ id: 'a', value: 1.25 }, { id: 'b', value: 1.25 }])
+    expect(m.map((x) => x.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('findHandTypedConstants: bad arguments throw ParityError', () => {
+  const holes = new Array<unknown>(1)
+  const cases: Array<[string, unknown, unknown, string]> = [
+    ['text that is not a string', 5, [], 'bad-input'],
+    ['text that is null', null, [], 'bad-input'],
+    ['a registry that is not an array', '1.25', 'x', 'bad-registry'],
+    ['a registry with a hole', '1.25', holes, 'bad-registry'],
+    ['an entry that is not an object', '1.25', [5], 'bad-registry'],
+    ['an entry without an id', '1.25', [{ value: 1 }], 'bad-registry'],
+    ['an empty id', '1.25', [{ id: '', value: 1 }], 'bad-registry'],
+    ['a duplicate id', '1.25', [{ id: 'a', value: 1 }, { id: 'a', value: 2 }], 'bad-registry'],
+    ['a NaN value', '1.25', [{ id: 'a', value: NaN }], 'bad-registry'],
+    ['an Infinity value', '1.25', [{ id: 'a', value: Infinity }], 'bad-registry'],
+    ['an empty string value', '1.25', [{ id: 'a', value: '' }], 'bad-registry'],
+    ['a value of the wrong type', '1.25', [{ id: 'a', value: true }], 'bad-registry'],
+    ['forms that are not an array', '1.25', [{ id: 'a', value: 1, forms: '1' }], 'bad-registry'],
+    ['an empty form', '1.25', [{ id: 'a', value: 1, forms: [''] }], 'bad-registry'],
+    ['a throwing getter', '1.25', [{ id: 'a', get value(): number { throw new Error('x') } }], 'bad-registry'],
+    ['a revoked proxy registry', '1.25', (() => { const p = Proxy.revocable([], {}); p.revoke(); return p.proxy })(), 'bad-registry'],
+  ]
+  it.each(cases)('%s', (_name, text, registry, code) => {
+    expect(() => findHandTypedConstants(text as string, registry as never)).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code }) as Error,
+    )
+  })
+
+  it('reads each registry getter once', () => {
+    let reads = 0
+    const entry = { id: 'a', get value(): number { reads += 1; return 1.25 } }
+    findHandTypedConstants('1.25 1.25 1.25', [entry])
+    expect(reads).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// auditReviewStamps
+// ---------------------------------------------------------------------------
+
+const audit = (before: unknown, after: unknown, options: Partial<StampOptions> = {}) =>
+  auditReviewStamps(before, after, { reviewedField: 'reviewedOn', sourceFields: ['source'], ...options })
+
+const rec = (id: string, over: Record<string, unknown> = {}) => ({
+  id,
+  value: 1,
+  source: 'https://example.test/a',
+  reviewedOn: '2026-06-08',
+  ...over,
+})
+
+describe('auditReviewStamps: an honest recheck passes', () => {
+  const NOW = new Date('2026-10-10T12:00:00Z')
+  const honest: Array<[string, unknown, unknown, Partial<StampOptions>?]> = [
+    ['nothing changed', [rec('a')], [rec('a')]],
+    ['a value changed and the date moved', [rec('a')], [rec('a', { value: 2, reviewedOn: '2026-09-01' })]],
+    ['the source changed and the date moved', [rec('a')], [rec('a', { source: 'https://example.test/b', reviewedOn: '2026-09-01' })]],
+    ['a field was added and the date moved', [rec('a')], [rec('a', { note: 'x', reviewedOn: '2026-09-01' })]],
+    ['the reviewer changed and the date moved', [rec('a', { by: 'p' })], [rec('a', { by: 'q', reviewedOn: '2026-09-01' })], { reviewerField: 'by' }],
+    ['a value changed and the date did not move', [rec('a')], [rec('a', { value: 2 })]],
+    ['five records rechecked on one day, each with a change', [1, 2, 3, 4, 5].map((i) => rec(`r${i}`)), [1, 2, 3, 4, 5].map((i) => rec(`r${i}`, { value: i + 10, reviewedOn: '2026-09-01' }))],
+    ['ten records moved to one date, exactly the default threshold', Array.from({ length: 10 }, (_, i) => rec(`r${i}`)), Array.from({ length: 10 }, (_, i) => rec(`r${i}`, { value: 9, reviewedOn: '2026-09-01' }))],
+    ['a new record with a past date', [rec('a')], [rec('a'), rec('b', { reviewedOn: '2026-10-01' })]],
+    ['a record removed', [rec('a'), rec('b')], [rec('a')]],
+    ['the same instant written another way', [rec('a', { reviewedOn: '2026-06-09' })], [rec('a', { reviewedOn: '2026-06-09T01:00:00+01:00' })]],
+    ['an auto-updated field listed in valueFields-free mode, ignored', [rec('a', { updatedAt: '1' })], [rec('a', { updatedAt: '2' })], { ignoreFields: ['updatedAt'] }],
+    ['today as a bare date, with now supplied', [rec('a')], [rec('a', { value: 3, reviewedOn: '2026-10-10' })], { now: NOW }],
+    ['tomorrow as a bare date, inside the 14-hour grace', [rec('a')], [rec('a', { value: 3, reviewedOn: '2026-10-11' })], { now: NOW }],
+    ['a timestamp exactly at now', [rec('a')], [rec('a', { value: 3, reviewedOn: '2026-10-10T12:00:00Z' })], { now: NOW }],
+    ['a deadline moved later with a new source', [rec('a', { expires: '2026-12-01' })], [rec('a', { source: 'https://example.test/c', expires: '2027-06-01', reviewedOn: '2026-09-01' })], { expiryField: 'expires' }],
+    ['a deadline moved earlier', [rec('a', { expires: '2026-12-01' })], [rec('a', { expires: '2026-11-01' })], { expiryField: 'expires' }],
+    ['a deadline that did not move', [rec('a', { expires: '2026-12-01' })], [rec('a', { expires: '2026-12-01' })], { expiryField: 'expires' }],
+    ['a deadline added', [rec('a')], [rec('a', { expires: '2026-12-01' })], { expiryField: 'expires' }],
+    ['both snapshots empty with allowEmpty', [], [], { allowEmpty: true }],
+    ['id-keyed objects', { a: rec('a') }, { a: rec('a', { value: 5, reviewedOn: '2026-09-01' }) }],
+    ['the same instant at another offset', [rec('a', { reviewedOn: '2026-06-08T23:30:00-05:00' })], [rec('a', { reviewedOn: '2026-06-09T04:30:00Z' })]],
+    ['a leap day', [rec('a', { reviewedOn: '2024-02-28' })], [rec('a', { value: 2, reviewedOn: '2024-02-29' })]],
+  ]
+  it.each(honest)('%s', (_name, before, after, options) => {
+    const r = audit(before, after, options)
+    expect(r.status).toBe('ok')
+    expect(r.ok).toBe(true)
+    expect(r.stampOnly).toEqual([])
+    expect(r.bulkBump).toEqual([])
+    expect(r.future).toEqual([])
+    expect(r.backward).toEqual([])
+    expect(r.extendedDeadlines).toEqual([])
+    expect(r.unknown).toEqual([])
+    expect(r.invalid).toEqual([])
+  })
+})
+
+describe('auditReviewStamps: unearned stamps are flagged', () => {
+  it('a stamp-only bump of one record', () => {
+    const r = audit([rec('a')], [rec('a', { reviewedOn: '2026-09-01' })])
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toEqual([{ id: 'a', from: '2026-06-08', to: '2026-09-01' }])
+  })
+
+  it('a stamp-only bump of 67 records on one date: every record and the bulk', () => {
+    const before = Array.from({ length: 67 }, (_, i) => rec(`card-${i}`))
+    const after = before.map((r) => ({ ...r, reviewedOn: '2026-10-10' }))
+    const r = audit(before, after)
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toHaveLength(67)
+    expect(r.bulkBump).toHaveLength(1)
+    expect(r.bulkBump[0]).toMatchObject({ date: '2026-10-10', count: 67, withEvidence: 0 })
+    expect(r.bulkBump[0]?.ids).toHaveLength(67)
+  })
+
+  it('a bulk bump where every record also changed is still a bulk bump, with the evidence counted', () => {
+    const before = Array.from({ length: 11 }, (_, i) => rec(`r${i}`))
+    const after = before.map((r, i) => ({ ...r, value: 100 + i, reviewedOn: '2026-10-10' }))
+    const r = audit(before, after)
+    expect(r.stampOnly).toEqual([])
+    expect(r.bulkBump).toMatchObject([{ date: '2026-10-10', count: 11, withEvidence: 11 }])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('bulkThreshold is "more than", and is configurable', () => {
+    const before = Array.from({ length: 4 }, (_, i) => rec(`r${i}`))
+    const after = before.map((r, i) => ({ ...r, value: 100 + i, reviewedOn: '2026-10-10' }))
+    expect(audit(before, after, { bulkThreshold: 4 }).bulkBump).toEqual([])
+    expect(audit(before, after, { bulkThreshold: 3 }).bulkBump).toHaveLength(1)
+    expect(audit(before, after, { bulkThreshold: 0 }).bulkBump).toHaveLength(1)
+  })
+
+  it('a script that stamps a different timestamp on every record is still one bulk bump', () => {
+    const before = Array.from({ length: 30 }, (_, i) => rec(`r${i}`))
+    const after = before.map((r, i) => ({ ...r, reviewedOn: `2026-10-10T09:00:${String(i).padStart(2, '0')}.${100 + i}Z` }))
+    const r = audit(before, after)
+    expect(r.bulkBump).toMatchObject([{ date: '2026-10-10', count: 30, withEvidence: 0 }])
+    expect(r.stampOnly).toHaveLength(30)
+  })
+
+  it('the bulk day is the UTC day of the new stamp', () => {
+    const before = Array.from({ length: 12 }, (_, i) => rec(`r${i}`))
+    const after = before.map((r) => ({ ...r, value: 7, reviewedOn: '2026-10-10T23:30:00-05:00' }))
+    expect(audit(before, after).bulkBump).toMatchObject([{ date: '2026-10-11', count: 12 }])
+  })
+
+  it('records moving to different dates are not one bulk bump', () => {
+    const before = Array.from({ length: 12 }, (_, i) => rec(`r${i}`))
+    const after = before.map((r, i) => ({ ...r, value: 100 + i, reviewedOn: `2026-09-${String(i + 1).padStart(2, '0')}` }))
+    expect(audit(before, after).bulkBump).toEqual([])
+  })
+
+  it.each([
+    ['a second later', '2026-06-08T10:00:00Z', '2026-06-08T10:00:01Z'],
+    ['a millisecond later', '2026-06-08T10:00:00.000Z', '2026-06-08T10:00:00.001Z'],
+    ['a fraction later', '2026-06-08T10:00:00.5Z', '2026-06-08T10:00:00.9Z'],
+    ['the same wall clock in an earlier zone', '2026-06-08T10:00:00+02:00', '2026-06-08T10:00:00+01:00'],
+    ['a date to a later timestamp the same day', '2026-06-08', '2026-06-08T00:00:01Z'],
+    ['across a year end', '2025-12-31', '2026-01-01'],
+    ['across a leap day', '2024-02-28', '2024-03-01'],
+  ])('a stamp-only move is detected: %s', (_name, from, to) => {
+    const r = audit([rec('a', { reviewedOn: from })], [rec('a', { reviewedOn: to })])
+    expect(r.stampOnly).toEqual([{ id: 'a', from, to }])
+  })
+
+  it('a stamp that moved backward', () => {
+    const r = audit([rec('a')], [rec('a', { reviewedOn: '2026-05-01' })])
+    expect(r.status).toBe('flagged')
+    expect(r.backward).toEqual([{ id: 'a', from: '2026-06-08', to: '2026-05-01' }])
+    expect(r.stampOnly).toEqual([])
+  })
+
+  it('a backward move is flagged even when the value changed too', () => {
+    expect(audit([rec('a')], [rec('a', { value: 9, reviewedOn: '2026-05-01' })]).backward).toHaveLength(1)
+  })
+
+  const NOW = '2026-10-10T12:00:00Z'
+  it.each([
+    ['a date two days ahead', '2026-10-12'],
+    ['a date a year ahead', '2027-10-10'],
+    ['a timestamp one second ahead', '2026-10-10T12:00:01Z'],
+    ['an offset timestamp ahead', '2026-10-10T15:00:00+02:00'],
+    ['a date just past the 14-hour grace', '2026-10-12'],
+  ])('a future stamp: %s', (_name, reviewedOn) => {
+    const r = audit([rec('a')], [rec('a', { value: 2, reviewedOn })], { now: NOW })
+    expect(r.status).toBe('flagged')
+    expect(r.future).toEqual([{ id: 'a', value: reviewedOn }])
+  })
+
+  it('a future stamp on a record that did not change, or is new, is flagged', () => {
+    const r = audit([rec('a', { reviewedOn: '2027-01-01' })], [rec('a', { reviewedOn: '2027-01-01' }), rec('b', { reviewedOn: '2027-02-02' })], { now: NOW })
+    expect(r.future.map((f) => f.id)).toEqual(['a', 'b'])
+  })
+
+  it('without now, the clock is never read and future stamps are not judged', () => {
+    const r = audit([rec('a')], [rec('a', { value: 2, reviewedOn: '2999-01-01' })])
+    expect(r.future).toEqual([])
+    expect(r.ok).toBe(true)
+  })
+
+  it('an extended deadline with no source change', () => {
+    const r = audit(
+      [rec('a', { expires: '2026-12-01' })],
+      [rec('a', { value: 2, expires: '2027-06-01', reviewedOn: '2026-09-01' })],
+      { expiryField: 'expires' },
+    )
+    expect(r.status).toBe('flagged')
+    expect(r.extendedDeadlines).toEqual([{ id: 'a', from: '2026-12-01', to: '2027-06-01' }])
+  })
+
+  it('an updatedAt that always changes hides a stamp-only bump unless ignored', () => {
+    const before = [rec('a', { updatedAt: '1' })]
+    const after = [rec('a', { updatedAt: '2', reviewedOn: '2026-09-01' })]
+    expect(audit(before, after).stampOnly).toEqual([])
+    expect(audit(before, after, { ignoreFields: ['updatedAt'] }).stampOnly).toHaveLength(1)
+  })
+
+  it('valueFields limits which fields count as evidence', () => {
+    const before = [rec('a', { note: 'x' })]
+    const after = [rec('a', { note: 'y', reviewedOn: '2026-09-01' })]
+    expect(audit(before, after).stampOnly).toEqual([])
+    expect(audit(before, after, { valueFields: ['value'] }).stampOnly).toHaveLength(1)
+  })
+
+  it('a changed source still counts as evidence under valueFields', () => {
+    const before = [rec('a')]
+    const after = [rec('a', { source: 'https://example.test/z', reviewedOn: '2026-09-01' })]
+    expect(audit(before, after, { valueFields: ['value'] }).stampOnly).toEqual([])
+  })
+
+  it('a duplicate key in the new snapshot is flagged and not judged', () => {
+    const r = audit([rec('a')], [rec('a', { reviewedOn: '2026-09-01' }), rec('a', { reviewedOn: '2026-09-02' })])
+    expect(r.duplicateKeys).toEqual([{ side: 'after', id: 'a', positions: [0, 1] }])
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toEqual([])
+  })
+
+  it('a renamed look-alike key is added and removed and listed as suspect, never as ok', () => {
+    const r = audit([rec('café')], [rec('café', { reviewedOn: '2026-09-01' })])
+    expect(r.added).toEqual(['café'])
+    expect(r.removed).toEqual(['café'])
+    expect(r.suspectKeys).toHaveLength(1)
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe('auditReviewStamps: dates that cannot be judged are unknown, never a pass', () => {
+  const bad: Array<[string, unknown, string]> = [
+    ['a missing stamp', undefined, 'missing'],
+    ['a null stamp', null, 'missing'],
+    ['an empty stamp', '', 'missing'],
+    ['a number', 20260608, 'not-a-string'],
+    ['a Date object', new Date('2026-06-08'), 'not-a-string'],
+    ['a zoneless timestamp', '2026-06-08T10:00:00', 'zoneless-timestamp'],
+    ['a zoneless timestamp without seconds', '2026-06-08T10:00', 'zoneless-timestamp'],
+    ['a prose date', 'June 8, 2026', 'unparseable-date'],
+    ['a US date', '06/08/2026', 'unparseable-date'],
+    ['a basic-format date', '20260608', 'unparseable-date'],
+    ['a space separator', '2026-06-08 10:00:00Z', 'unparseable-date'],
+    ['a lowercase t', '2026-06-08t10:00:00Z', 'unparseable-date'],
+    ['a lowercase z', '2026-06-08T10:00:00z', 'unparseable-date'],
+    ['an offset without a colon', '2026-06-08T10:00:00+0200', 'unparseable-date'],
+    ['hour 24', '2026-06-08T24:00:00Z', 'unparseable-date'],
+    ['a leap second', '2026-06-08T10:00:60Z', 'unparseable-date'],
+    ['month 13', '2026-13-01', 'unparseable-date'],
+    ['day 32', '2026-01-32', 'unparseable-date'],
+    ['Feb 29 in a common year', '2026-02-29', 'unparseable-date'],
+    ['Feb 29 in 1900', '1900-02-29', 'unparseable-date'],
+    ['year 0000', '0000-01-01', 'unparseable-date'],
+    ['a one-digit month', '2026-6-08', 'unparseable-date'],
+    ['trailing text', '2026-06-08 (approx)', 'unparseable-date'],
+    ['leading whitespace', ' 2026-06-08', 'unparseable-date'],
+    ['a trailing newline', '2026-06-08\n', 'unparseable-date'],
+    ['a long fraction', '2026-06-08T10:00:00.1234567890Z', 'unparseable-date'],
+    ['an empty fraction', '2026-06-08T10:00:00.Z', 'unparseable-date'],
+    ['an offset of 24 hours', '2026-06-08T10:00:00+24:00', 'unparseable-date'],
+    ['a fullwidth digit', '２026-06-08', 'unparseable-date'],
+  ]
+  it.each(bad)('an unusable stamp after the change: %s', (_name, value, reason) => {
+    const r = audit([rec('a')], [{ ...rec('a'), reviewedOn: value }])
+    expect(r.ok).toBe(false)
+    expect(r.unknown.find((u) => u.side === 'after')?.reason).toBe(reason)
+    expect(r.stampOnly).toEqual([])
+    expect(r.future).toEqual([])
+  })
+
+  it('an unusable stamp before the change is unknown when the stamp moved', () => {
+    const r = audit([rec('a', { reviewedOn: 'sometime' })], [rec('a', { reviewedOn: '2026-09-01' })])
+    expect(r.unknown).toMatchObject([{ id: 'a', side: 'before', reason: 'unparseable-date', value: 'sometime' }])
+    expect(r.stampOnly).toEqual([])
+    expect(r.ok).toBe(false)
+  })
+
+  it('a stamp that is missing in both snapshots is not a pass', () => {
+    const r = audit([{ id: 'a', value: 1, source: 's' }], [{ id: 'a', value: 1, source: 's' }])
+    expect(r.ok).toBe(false)
+    expect(r.unknown).toMatchObject([{ id: 'a', side: 'after', reason: 'missing' }])
+  })
+
+  it('a removed stamp is unknown, not backward', () => {
+    const r = audit([rec('a')], [{ id: 'a', value: 1, source: 'https://example.test/a' }])
+    expect(r.ok).toBe(false)
+    expect(r.unknown.map((u) => u.reason)).toContain('missing')
+    expect(r.backward).toEqual([])
+  })
+
+  it('a removed deadline is unknown', () => {
+    const r = audit([rec('a', { expires: '2026-12-01' })], [rec('a')], { expiryField: 'expires' })
+    expect(r.unknown).toMatchObject([{ id: 'a', side: 'after', field: 'expires', reason: 'expiry-removed', value: '2026-12-01' }])
+    expect(r.ok).toBe(false)
+  })
+
+  it('an unparseable deadline that moved is unknown, not an extension', () => {
+    const r = audit([rec('a', { expires: '2026-12-01' })], [rec('a', { expires: 'next spring' })], { expiryField: 'expires' })
+    expect(r.unknown).toMatchObject([{ side: 'after', field: 'expires', reason: 'unparseable-date' }])
+    expect(r.extendedDeadlines).toEqual([])
+  })
+
+  it('an empty snapshot is not a pass', () => {
+    expect(audit([], [rec('a')]).ok).toBe(false)
+    expect(audit([rec('a')], []).ok).toBe(false)
+    expect(audit([], []).ok).toBe(false)
+  })
+
+  it('readable records are still judged when another record is unreadable', () => {
+    const r = audit([rec('a'), null], [rec('a', { reviewedOn: '2026-09-01' }), null])
+    expect(r.stampOnly).toHaveLength(1)
+    expect(r.invalid).toHaveLength(2)
+  })
+})
+
+describe('auditReviewStamps: whole-call problems throw ParityError', () => {
+  const ok = { reviewedField: 'reviewedOn', sourceFields: ['source'] }
+  const badOptions: Array<[string, unknown]> = [
+    ['no options', undefined],
+    ['no reviewedField', { sourceFields: [] }],
+    ['no sourceFields', { reviewedField: 'reviewedOn' }],
+    ['a misspelled option', { ...ok, reviewerFeild: 'by' }],
+    ['sourceFields that are not an array', { ...ok, sourceFields: 'source' }],
+    ['a field both evidence and ignored', { ...ok, ignoreFields: ['source'] }],
+    ['a negative threshold', { ...ok, bulkThreshold: -1 }],
+    ['a fractional threshold', { ...ok, bulkThreshold: 1.5 }],
+    ['a NaN threshold', { ...ok, bulkThreshold: NaN }],
+    ['a date-only now', { ...ok, now: '2026-10-10' }],
+    ['a zoneless now', { ...ok, now: '2026-10-10T12:00:00' }],
+    ['an invalid Date now', { ...ok, now: new Date(NaN) }],
+    ['a NaN now', { ...ok, now: NaN }],
+    ['a plain object now', { ...ok, now: {} }],
+    ['a boolean now', { ...ok, now: true }],
+  ]
+  it.each(badOptions)('%s', (_name, options) => {
+    expect(() => auditReviewStamps([rec('a')], [rec('a')], options as StampOptions)).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('now accepts a Date, epoch milliseconds, or a zoned timestamp, including from another realm', () => {
+    const after = [rec('a', { value: 2, reviewedOn: '2026-10-12' })]
+    for (const now of [new Date('2026-10-10T12:00:00Z'), Date.parse('2026-10-10T12:00:00Z'), '2026-10-10T12:00:00Z', vm.runInNewContext("new Date('2026-10-10T12:00:00Z')")]) {
+      expect(audit([rec('a')], after, { now: now as Date }).future).toHaveLength(1)
+    }
+  })
+
+  it('a snapshot that is not a dataset throws', () => {
+    expect(() => audit(null, [])).toThrowError(expect.objectContaining({ code: 'bad-input' }) as Error)
+    expect(() => audit([], 'x')).toThrowError(expect.objectContaining({ code: 'bad-input' }) as Error)
+  })
+})
