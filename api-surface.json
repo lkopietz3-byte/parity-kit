@@ -1,0 +1,8 @@
+{
+  "parity-kit": [
+    "ParityError",
+    "auditReviewStamps",
+    "compareMirror",
+    "findHandTypedConstants"
+  ]
+}
