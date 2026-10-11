@@ -1664,3 +1664,31 @@ describe('the file-level review date recipe (PK-2)', () => {
     expect(r.invalid.length).toBeGreaterThan(0)
   })
 })
+
+describe('README gate for evidenced bulk bumps waives only the bulk bump', () => {
+  // Same expression as the README's acceptEvidencedBulk recipe.
+  const acceptEvidencedBulk = (a: ReturnType<typeof audit>) =>
+    a.ok ||
+    (a.bulkBump.every((b) => b.withoutEvidence === 0) &&
+      a.stampOnly.length === 0 && a.future.length === 0 && a.backward.length === 0 &&
+      a.extendedDeadlines.length === 0 && a.unknown.length === 0 && a.unknownFields.length === 0 &&
+      a.duplicateKeys.length === 0 && a.suspectKeys.length === 0 && a.invalid.length === 0)
+  const before = Array.from({ length: 11 }, (_, i) => rec(`r${i}`))
+  const evidenced = before.map((r, i) => ({ ...r, value: 100 + i, reviewedOn: '2026-10-10' }))
+
+  it('accepts an evidenced bulk bump on its own', () => {
+    expect(acceptEvidencedBulk(audit(before, evidenced))).toBe(true)
+  })
+  it('still fails when a record also lost its stamp', () => {
+    const after = evidenced.map((r, i) => (i === 0 ? { id: r.id, value: r.value, source: r.source } : r))
+    expect(acceptEvidencedBulk(audit(before, after))).toBe(false)
+  })
+  it('still fails when a stamp is in the future', () => {
+    const after = [...evidenced, rec('new', { reviewedOn: '2026-12-31' })]
+    expect(acceptEvidencedBulk(audit([...before, rec('new')], after, { now: new Date('2026-10-10T12:00:00Z') }))).toBe(false)
+  })
+  it('still fails when a record is invalid', () => {
+    const after = [...evidenced, { id: 'bad', value: 1, source: 'https://example.test/a', reviewedOn: 7 }]
+    expect(acceptEvidencedBulk(audit([...before, rec('bad')], after))).toBe(false)
+  })
+})

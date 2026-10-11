@@ -266,7 +266,18 @@ A field added or removed counts as a change. The expiry field is not evidence: m
 
 **`stampOnly`:** the stamp moved later and there is no evidence.
 
-**`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong. Read `summary` first: it says how many of the records also changed a value, source or reviewer (`withEvidence`) and how many did not (`withoutEvidence`, which are also in `stampOnly`). A bump with `withoutEvidence: 0` is an automated but evidenced update, such as a bot refreshing many records at once; it still sets `status` to `flagged`, because a person should confirm the bot's change is real. If you accept that for a source, gate on the part that matters: `audit.stampOnly.length === 0 && audit.bulkBump.every((b) => b.withoutEvidence === 0)`.
+**`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong. Read `summary` first: it says how many of the records also changed a value, source or reviewer (`withEvidence`) and how many did not (`withoutEvidence`, which are also in `stampOnly`). A bump with `withoutEvidence: 0` is an automated but evidenced update, such as a bot refreshing many records at once; it still sets `status` to `flagged`, because a person should confirm the bot's change is real. If you accept that for a source, waive only the evidenced bulk bumps and keep every other finding failing:
+
+```ts
+const acceptEvidencedBulk = (a) =>
+  a.ok ||
+  (a.bulkBump.every((b) => b.withoutEvidence === 0) &&
+    a.stampOnly.length === 0 && a.future.length === 0 && a.backward.length === 0 &&
+    a.extendedDeadlines.length === 0 && a.unknown.length === 0 && a.unknownFields.length === 0 &&
+    a.duplicateKeys.length === 0 && a.suspectKeys.length === 0 && a.invalid.length === 0);
+```
+
+Checking only `stampOnly` and `bulkBump` is not enough: missing stamps, invalid records and future dates would then pass.
 
 **`backward`:** the stamp moved earlier. **`extendedDeadlines`:** the expiry moved later and no source field changed. A removed expiry is `unknown` (`expiry-removed`), and a newly added expiry is not reported.
 
