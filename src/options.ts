@@ -10,6 +10,7 @@ export interface Budget {
   readonly maxNodes: number;
   readonly maxDepth: number;
   readonly maxRecords: number;
+  readonly maxKeyLength: number;
 }
 
 const DEFAULT_MAX_RECORDS = 1_000_000;
@@ -122,7 +123,7 @@ export function optNames(
 }
 
 export function makeBudget(limits: unknown, what: string): Budget {
-  const o = readOptions(limits, ['maxRecords', 'maxNodes', 'maxDepth'], `${what} limits`);
+  const o = readOptions(limits, ['maxRecords', 'maxNodes', 'maxDepth', 'maxKeyLength'], `${what} limits`);
   const int = (name: keyof Limits, fallback: number, min: number, max: number): number => {
     const v = o[name];
     if (v === undefined) return fallback;
@@ -139,5 +140,6 @@ export function makeBudget(limits: unknown, what: string): Budget {
     maxRecords: int('maxRecords', DEFAULT_MAX_RECORDS, 1, 50_000_000),
     maxNodes,
     maxDepth: int('maxDepth', DEFAULT_MAX_DEPTH, 1, HARD_MAX_DEPTH),
+    maxKeyLength: int('maxKeyLength', 4096, 1, 1_048_576),
   };
 }

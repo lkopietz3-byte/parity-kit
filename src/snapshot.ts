@@ -1,6 +1,7 @@
-import { isBufferView, nativeKind } from './brand.js';
+import { isBufferView, nativeKind, type ShapeFacts } from './brand.js';
+import { keyProblem } from './keys.js';
 import { ParityError, isOwnError, registerOwnError } from './errors.js';
-import { descriptorValue, isPlainObject, readOwn, type Budget } from './options.js';
+import { descriptorValue, readOwn, type Budget } from './options.js';
 import type { InvalidReason, Key } from './types.js';
 
 /**
@@ -118,44 +119,50 @@ interface Slot {
 
 interface Slots {
   slots: Slot[];
-  /** The object has an own string-keyed property that is not enumerable (a built-in's internal bookkeeping, never JSON data). */
-  hidden: boolean;
+  /** What enumeration already learned, so classifying an empty-looking object never reads it again. */
+  facts: ShapeFacts;
 }
 
 /**
  * The own properties of a plain object that will be read, as descriptors only
  * (no getter has run yet), sorted by key. With `names`, those named own
  * properties; without, every own enumerable string-keyed property. Every
- * probe, present or absent, is charged to the work budget.
+ * probe, present or absent, is charged to the work budget. Each descriptor is
+ * read once: `skip` names a property whose descriptor (`skipDesc`) the caller
+ * already read. The `constructor` descriptor and the presence of an own
+ * `Symbol.toStringTag` are remembered in `facts`.
  */
 function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, skip?: string, skipDesc?: PropertyDescriptor): Slots {
   const out: Slot[] = [];
-  let hidden = false;
+  const facts: ShapeFacts = {};
+  if (skip === 'constructor') facts.constructorDesc = { desc: skipDesc };
   if (names !== null) {
     spend(ctx.budget, names.length);
     for (const name of names) {
       if (name === skip) continue;
       const desc = Reflect.getOwnPropertyDescriptor(object, name);
+      if (name === 'constructor') facts.constructorDesc = { desc };
       if (desc !== undefined) out.push({ name, desc });
     }
   } else {
     const keys = Reflect.ownKeys(object);
     spend(ctx.budget, keys.length);
+    facts.hasOwnTag = false;
+    if (facts.constructorDesc === undefined) facts.constructorDesc = { desc: undefined };
     for (const key of keys) {
-      if (typeof key !== 'string') continue;
-      if (key === skip) {
-        // The caller already read this descriptor; reading it again could see a different one.
-        if (skipDesc !== undefined && skipDesc.enumerable !== true) hidden = true;
+      if (typeof key !== 'string') {
+        if (key === Symbol.toStringTag) facts.hasOwnTag = true;
         continue;
       }
+      if (key === skip) continue; // the caller already read this descriptor
       const desc = Reflect.getOwnPropertyDescriptor(object, key);
       if (desc === undefined) continue;
-      if (desc.enumerable !== true) hidden = true;
-      else out.push({ name: key, desc });
+      if (key === 'constructor') facts.constructorDesc = { desc };
+      if (desc.enumerable === true) out.push({ name: key, desc });
     }
   }
   out.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
-  return { slots: out, hidden };
+  return { slots: out, facts };
 }
 
 /** Read one slot exactly once: a data property gives its value, a getter runs. */
@@ -179,14 +186,15 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
   }
   if (value === null) return null;
   const object = value;
-  const isArray = Array.isArray(object);
-  if (!isArray) {
+  let proto: object | null = null;
+  if (!Array.isArray(object)) {
     // Classify by prototype shape and internal slots only; never by any property
     // the caller controls (no toStringTag, constructor, toJSON).
     if (isBufferView(object)) throw unsupported(ctx, 'unsupported-value', 'typed arrays and DataViews cannot be compared');
-    if (!isPlainObject(object)) {
-      const kind = nativeKind(object);
-      if (kind !== undefined && kind !== 'other') return new DateSnap(kind.date);
+    proto = Reflect.getPrototypeOf(object);
+    if (proto !== null && Reflect.getPrototypeOf(proto) !== null) {
+      const time = dateTime(object);
+      if (time !== undefined) return new DateSnap(time);
       throw unsupported(ctx, 'unsupported-value', 'only plain objects, arrays and Dates can be compared');
     }
   }
@@ -215,11 +223,12 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
       return new ArrSnap(items);
     }
     {
-      const { slots, hidden } = ownSlots(object, null, ctx);
-      // An object that looks empty, or carries hidden own properties, may be a
-      // built-in whose prototype was replaced (a null-prototype Map or Date).
-      if (slots.length === 0 || hidden) {
-        const kind = nativeKind(object);
+      const { slots, facts } = ownSlots(object, null, ctx);
+      // An object with no own enumerable property may be a built-in whose
+      // prototype was replaced (a null-prototype Map or Date). A populated object
+      // is plain data.
+      if (slots.length === 0) {
+        const kind = nativeKind(object, proto, facts);
         if (kind !== undefined && kind !== 'other') return new DateSnap(kind.date);
         if (kind === 'other') throw unsupported(ctx, 'unsupported-value', 'a built-in object with its prototype replaced cannot be compared');
       }
@@ -362,8 +371,16 @@ function readRecord(
       keyValue = slotValue(raw, { name: cfg.key, desc: keyDesc });
       ctx.trail.pop();
     }
-    if (mode === 'array' && validKey(keyValue)) id = keyValue;
-    if (!isPlainObject(raw) || isBufferView(raw)) {
+    const problem = typeof keyValue === 'string' ? keyProblem(keyValue, ctx.budget.maxKeyLength) : undefined;
+    // A refused key is never normalized, so only a key that will be analyzed is charged.
+    if (typeof keyValue === 'string' && problem === undefined) spend(ctx.budget, keyValue.length);
+    if (mode === 'array' && validKey(keyValue) && problem === undefined) id = keyValue;
+    if (isBufferView(raw)) {
+      bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
+      return;
+    }
+    const proto = Reflect.getPrototypeOf(raw);
+    if (proto !== null && Reflect.getPrototypeOf(proto) !== null) {
       bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
       return;
     }
@@ -376,6 +393,10 @@ function readRecord(
         bad('bad-key', `the key field "${cfg.key}" must be a non-empty string or a finite number`);
         return;
       }
+      if (problem !== undefined) {
+        bad(problem, `the key is ${problem === 'key-too-long' ? `longer than ${ctx.budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}`);
+        return;
+      }
       id = keyValue;
     } else if (keyValue !== undefined) {
       if (!validKey(keyValue) || String(keyValue) !== position) {
@@ -384,11 +405,11 @@ function readRecord(
       }
     }
     spend(ctx.budget, 1);
-    const { slots, hidden } = ownSlots(raw, cfg.names, ctx, cfg.key, keyDesc);
-    // A record with nothing in it, or with hidden own properties, may be a
-    // built-in whose prototype was replaced (a null-prototype Map or Date).
-    if ((slots.length === 0 && keyDesc === undefined) || hidden) {
-      if (nativeKind(raw) !== undefined) {
+    const { slots, facts } = ownSlots(raw, cfg.names, ctx, cfg.key, keyDesc);
+    // A record with no own enumerable property may be a built-in whose prototype
+    // was replaced (a null-prototype Map or Date).
+    if (slots.length === 0 && keyDesc?.enumerable !== true) {
+      if (nativeKind(raw, proto, facts) !== undefined) {
         bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
         return;
       }
@@ -451,7 +472,8 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       }
       return { entries, invalid, mode: 'array' };
     }
-    if (!isPlainObject(input)) {
+    const proto = Reflect.getPrototypeOf(input);
+    if (proto !== null && Reflect.getPrototypeOf(proto) !== null) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id`);
     }
     const keys = Reflect.ownKeys(input);
@@ -460,16 +482,19 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     spend(budget, keys.length);
     const slots: Array<{ id: string; desc: PropertyDescriptor }> = [];
-    let hidden = false;
+    const facts: ShapeFacts = { hasOwnTag: false, constructorDesc: { desc: undefined } };
     for (const key of keys) {
-      if (typeof key !== 'string') continue;
+      if (typeof key !== 'string') {
+        if (key === Symbol.toStringTag) facts.hasOwnTag = true;
+        continue;
+      }
       // One descriptor read per property: the record comes from this descriptor.
       const desc = Reflect.getOwnPropertyDescriptor(input, key);
       if (desc === undefined) continue;
+      if (key === 'constructor') facts.constructorDesc = { desc };
       if (desc.enumerable === true) slots.push({ id: key, desc });
-      else hidden = true;
     }
-    if ((slots.length === 0 || hidden) && nativeKind(input) !== undefined) {
+    if (isBufferView(input) || (slots.length === 0 && nativeKind(input, proto, facts) !== undefined)) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -484,6 +509,13 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       }
       if (id.trim() === '') {
         invalid.push({ position: id, reason: 'bad-key', detail: 'a record key must not be empty' });
+        entries.push({ id: undefined, position: id, fields: undefined });
+        continue;
+      }
+      const problem = keyProblem(id, budget.maxKeyLength);
+      if (problem === undefined) spend(budget, id.length);
+      if (problem !== undefined) {
+        invalid.push({ position: id, reason: problem, detail: `the key is ${problem === 'key-too-long' ? `longer than ${budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}` });
         entries.push({ id: undefined, position: id, fields: undefined });
         continue;
       }

@@ -1,4 +1,4 @@
-import type { Key, SuspectKeyGroup } from './types.js';
+import type { InvalidReason, Key, SuspectKeyGroup } from './types.js';
 
 /**
  * Characters that are invisible or purely cosmetic in a key: zero-width and
@@ -132,4 +132,30 @@ export function findSuspectKeys(
     if (group.seen.size > 1) out.push({ skeleton: group.skeleton, keys: group.keys });
   }
   return out;
+}
+
+/** Longest run of combining marks a key may carry. Canonical reordering is quadratic in such a run. */
+export const MAX_COMBINING_RUN = 32;
+
+const COMBINING = /^\p{M}$/u;
+
+/**
+ * Can this string key be analyzed for look-alikes within a bound? A key longer
+ * than `maxLength` UTF-16 units is `key-too-long`; a key with a run of more than
+ * 32 combining marks is `key-unnormalizable` (Unicode normalization sorts such
+ * a run, which takes quadratic time). Checked before any normalization, in one
+ * linear pass.
+ */
+export function keyProblem(key: string, maxLength: number): InvalidReason | undefined {
+  if (key.length > maxLength) return 'key-too-long';
+  let run = 0;
+  for (const ch of key) {
+    if (COMBINING.test(ch)) {
+      run += 1;
+      if (run > MAX_COMBINING_RUN) return 'key-unnormalizable';
+    } else {
+      run = 0;
+    }
+  }
+  return undefined;
 }

@@ -107,7 +107,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this. |
 | `allowEmpty` | `false` | Let an empty canonical set pass. |
 | `foldCase` | `true` | Fold upper and lower case when looking for look-alike keys. |
-| `limits` | see Limits | `maxRecords`, `maxNodes`, `maxDepth`. |
+| `limits` | see Limits | `maxRecords`, `maxNodes`, `maxDepth`, `maxKeyLength`. |
 
 Returns:
 
@@ -173,9 +173,11 @@ Returns `ok`, `status`, `compared`, and:
 - A **getter** is run once per read. A getter or Proxy trap that throws makes that record `invalid` with reason `unreadable`; the other records are still compared.
 - An object property whose value is `undefined` is treated as absent, the way JSON treats it.
 - Values may be strings, finite or non-finite numbers, booleans, bigints, `null`, `Date`s, arrays and plain objects, nested. A function, symbol, class instance, `Map`, typed array or other exotic object inside a record makes the record `invalid` with reason `unsupported-value`. A cycle is `cycle`. Nesting deeper than `maxDepth` is `too-deep`.
-- A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not. Built-ins are recognized the same way, by calling a captured built-in method that only succeeds on a real instance, never by reading `Symbol.toStringTag`, `constructor` or the prototype. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` is reported as `unsupported-value` even when its prototype was replaced with `null` or `Object.prototype`. For speed this check runs on an object that has no enumerable own properties, or has a non-enumerable own property, or whose prototype is not plain, and always for typed arrays. A built-in whose prototype was replaced **and** that was given its own enumerable properties is read as the plain object those properties make.
+- A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not.
+- An object with **at least one own enumerable property** is plain data, if its prototype is plain. An object with **no own enumerable property** is checked for being a built-in whose prototype was replaced with `null` or `Object.prototype`. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` found that way is `unsupported-value`, and a Date found that way is a Date. The check calls a captured built-in method that only succeeds on a real instance; it never reads `Symbol.toStringTag`, `constructor` or the prototype, copies nothing, and costs tens to a few hundred microseconds of CPU per empty-looking object such as `{}` (about 30 to 40 µs on a quiet machine; linear in the number of such objects, so 100,000 empty objects cost seconds, and a populated object costs nothing extra). An empty object whose prototype is neither `null` nor this realm's untouched `Object.prototype` cannot be ruled out, so it is also `unsupported-value`; that includes an empty object from another realm, while an object with properties from another realm is fine.
+- **The remaining exotic-object gap.** Proxies are read through their traps, and host objects or built-ins disguised with a replaced prototype **and** their own enumerable properties are read as plain data. This is a documented limit, not a promised check.
 - Reading a value never runs a getter on a prototype and never reads a property to classify it. Nothing is copied or cloned to classify it either, so classifying an object cannot run an excluded getter, cannot rewrite another record, and costs no memory proportional to its contents. Every property that is read is read once: the key, each selected field and the reviewed field are each looked up a single time, and the value used is the one from that lookup. The only caller code that can run is an own getter on a property being read (once), a Proxy trap, and, for a real `Promise`, the `constructor` lookup that `then` performs.
-- A Promise is recognized by calling `then`, which can fail after it has recognized the Promise (a `constructor` that is `null`, a string, or an accessor, or a `Symbol.species` that throws). So `then` is only called after a check of the property descriptors (no getter is run) shows the lookup cannot throw. When that check cannot show it, the object is reported as `unsupported-value`, never read as plain data. A plain value with a data field named `constructor` is still compared as data when its other fields are selected; only a value with nothing selected and an odd `constructor` is refused.
+- A Promise is recognized by calling `then`, which then looks up `constructor`. `then` is only called when that lookup cannot run caller code: the object has no own `constructor` (or an own data one holding `undefined`) and its prototype is `null` or the untouched `Object.prototype`. Otherwise the object is `unsupported-value`, never plain data. On Node before 24, which has no `Error.isError`, an Error is recognized through `Object.prototype.toString`, used only under the same kind of precondition (no own `Symbol.toStringTag`, a `null` or untouched `Object.prototype`); otherwise the object is `unsupported-value`. If your Proxy has a `get` trap, that fallback path can run it.
 - A key field is left out of the compared fields unless you ask for it: name it in `fields`, or use it as `reviewedField`. Then it is read like any other field.
 - Results never alias your input. Reported values are copies (objects have a `null` prototype).
 
@@ -262,16 +264,17 @@ Everything wrong with **the whole call** throws `ParityError` (it has a `code`):
 | `too-large` | A limit was passed. |
 | `bad-registry` | A malformed hand-typed-constant registry. |
 
-Everything wrong with **one record** is reported in `invalid` instead, so one bad record never hides the others. Reasons: `empty-dataset`, `hole`, `not-an-object`, `not-a-plain-object`, `missing-key`, `bad-key`, `key-mismatch`, `unreadable`, `unsupported-value`, `too-deep`, `cycle`.
+Everything wrong with **one record** is reported in `invalid` instead, so one bad record never hides the others. Reasons: `empty-dataset`, `hole`, `not-an-object`, `not-a-plain-object`, `missing-key`, `bad-key`, `key-too-long`, `key-unnormalizable`, `key-mismatch`, `unreadable`, `unsupported-value`, `too-deep`, `cycle`.
 
 An **empty canonical set** (or empty snapshot) is reported as `invalid` with reason `empty-dataset` unless `allowEmpty: true`, because an empty file loaded by mistake would otherwise pass.
 
-Limits (`limits: { maxRecords, maxNodes, maxDepth }`):
+Limits (`limits: { maxRecords, maxNodes, maxDepth, maxKeyLength }`):
 
 | Limit | Default | Meaning |
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. |
 | `maxNodes` | 10,000,000 | Most values read in one call, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this. |
+| `maxKeyLength` | 4,096 (at most 1,048,576) | Longest string key, in UTF-16 units. A longer key, or a key with a run of more than 32 combining marks (Unicode normalization is quadratic in such a run), makes its record `invalid` with `key-too-long` or `key-unnormalizable`; it is never analyzed for look-alikes. Key lengths count against `maxNodes`. |
 | `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
 Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. Comparison itself never recurses deeper than `maxDepth`.

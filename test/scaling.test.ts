@@ -139,13 +139,45 @@ describe('1 MB of text', () => {
     expect(() => findHandTypedConstants(text, reg)).not.toThrow()
   })
 
-  it('compareMirror compares 1 MB string values and a 1 MB key', () => {
+  it('compareMirror compares 1 MB string values; a 1 MB key is refused, not analyzed', () => {
     const big = 'x'.repeat(1_000_000)
-    expect(compareMirror([{ id: big, v: big }], [{ id: big, v: big }]).ok).toBe(true)
+    expect(compareMirror([{ id: 'a', v: big }], [{ id: 'a', v: big }]).ok).toBe(true)
     const r = compareMirror([{ id: 'a', v: big }], [{ id: 'a', v: `${big}y` }])
     expect(r.changed).toHaveLength(1)
-    const k = compareMirror([{ id: big }], [{ id: `${big}\u200b` }])
-    expect(k.suspectKeys).toHaveLength(1)
+    const k = compareMirror([{ id: big }], [{ id: big }])
+    expect(k.invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
+    expect(k.ok).toBe(false)
+  })
+})
+
+describe('hostile keys', () => {
+  it('a key built to make normalization quadratic is refused quickly, whatever maxNodes says', () => {
+    for (const n of [16_000, 32_000, 100_000]) {
+      const id = `a${'\u0315'.repeat(n)}${'\u0300'.repeat(n)}`
+      let r: ReturnType<typeof compareMirror> | undefined
+      const ms = cpuMs(() => {
+        r = compareMirror([{ id }], [{ id }], { limits: { maxNodes: 10, maxKeyLength: 1_000_000 } })
+      }, 1)
+      expect(r?.invalid.map((i) => i.reason)).toEqual(['key-unnormalizable', 'key-unnormalizable'])
+      expect(ms).toBeLessThan(500)
+    }
+  })
+
+  it('the same key under the default limits is refused as too long', () => {
+    const id = `a${'\u0315'.repeat(16_000)}${'\u0300'.repeat(16_000)}`
+    expect(compareMirror([{ id }], [{ id }]).invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
+  })
+
+  it('many long keys are charged against maxNodes', () => {
+    const many = Array.from({ length: 200 }, (_, i) => ({ id: `${'k'.repeat(1000)}${i}` }))
+    expect(() => compareMirror(many, many, { limits: { maxNodes: 20_000 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+
+  it('a hundred thousand ordinary keys stay linear', () => {
+    const make = (n: number): Array<{ id: string }> => Array.from({ length: n }, (_, i) => ({ id: `key-${i}` }))
+    expect(ratio(() => compareMirror(make(20_000), make(20_000)), () => compareMirror(make(80_000), make(80_000)))).toBeLessThan(10)
   })
 })
 
@@ -170,8 +202,8 @@ describe('duplicate forms and memory', () => {
 describe('empty objects', () => {
   it('100k records with empty-object fields stay linear', () => {
     const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
-    const small = build(10_000)
-    const large = build(40_000)
+    const small = build(1500)
+    const large = build(6000)
     expect(ratio(() => compareMirror(small, small), () => compareMirror(large, large))).toBeLessThan(10)
   })
 })

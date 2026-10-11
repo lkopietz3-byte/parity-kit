@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
@@ -522,4 +526,126 @@ describe('every property of a record is read once (default and selected-field pa
     expect(r.ok).toBe(true)
     for (const n of inner.reads.values()) expect(n).toBeLessThanOrEqual(1)
   })
+})
+
+describe('classification reuses the descriptors it already read', () => {
+  function counted<T extends object>(target: T, hook?: (key: string, n: number) => void): { proxy: T; reads: Map<string, number> } {
+    const reads = new Map<string, number>()
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(t, k) {
+        const key = String(k)
+        const n = (reads.get(key) ?? 0) + 1
+        reads.set(key, n)
+        hook?.(key, n)
+        return Reflect.getOwnPropertyDescriptor(t, k)
+      },
+    })
+    return { proxy, reads }
+  }
+
+  it('a second constructor read cannot let another record drift unseen', () => {
+    const b = { v: 1 }
+    const a = counted(Object.defineProperty({ constructor: undefined }, 'hidden', { value: 0 }), (k, n) => {
+      if (k === 'constructor' && n === 2) b.v = 2
+    })
+    const r = compareMirror({ a: {}, b: { v: 2 } }, { a: a.proxy, b })
+    expect(a.reads.get('constructor')).toBe(1)
+    expect(r.changed).toMatchObject([{ id: 'b', field: 'v' }])
+  })
+
+  it('an empty-looking value with a hidden constructor reads it once', () => {
+    const inner = counted(Object.defineProperty({}, 'constructor', { value: undefined }))
+    compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: inner.proxy }])
+    expect(inner.reads.get('constructor')).toBe(1)
+  })
+
+  it('a record keyed by a field named constructor reads it once', () => {
+    const later = { constructor: 'b', v: 1 }
+    const rec = counted({ constructor: 'a', v: 1 }, (k, n) => {
+      if (k === 'constructor' && n === 2) later.v = 2
+    })
+    const r = compareMirror([{ constructor: 'a', v: 1 }, { constructor: 'b', v: 2 }], [rec.proxy, later], { key: 'constructor' })
+    expect(rec.reads.get('constructor')).toBe(1)
+    expect(r.changed).toMatchObject([{ id: 'b', field: 'v' }])
+  })
+
+  it('constructor as a selected field is read once', () => {
+    const rec = counted({ id: 'a', constructor: 'x', v: 1 })
+    compareMirror([{ id: 'a', constructor: 'x', v: 1 }], [rec.proxy], { fields: ['constructor', 'v'] })
+    expect(rec.reads.get('constructor')).toBe(1)
+  })
+
+  it('constructor as a default-path field is read once', () => {
+    const rec = counted({ id: 'a', constructor: 'x', v: 1 })
+    compareMirror([{ id: 'a', constructor: 'x', v: 1 }], [rec.proxy])
+    expect(rec.reads.get('constructor')).toBe(1)
+  })
+})
+
+describe('no global is touched', () => {
+  it('Error.stackTraceLimit is never changed while values are classified', () => {
+    const saved = (Error as unknown as { stackTraceLimit: number }).stackTraceLimit
+    const seen: number[] = []
+    const p = new Proxy({}, {
+      getOwnPropertyDescriptor(t, k) {
+        seen.push((Error as unknown as { stackTraceLimit: number }).stackTraceLimit)
+        return Reflect.getOwnPropertyDescriptor(t, k)
+      },
+      ownKeys(t) {
+        seen.push((Error as unknown as { stackTraceLimit: number }).stackTraceLimit)
+        return Reflect.ownKeys(t)
+      },
+    })
+    compareMirror([{ id: 'a', v: {} }, { id: 'b', v: {} }], [{ id: 'a', v: p }, { id: 'b', v: Object.create(null) as object }])
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((n) => n === saved)).toBe(true)
+    expect((Error as unknown as { stackTraceLimit: number }).stackTraceLimit).toBe(saved)
+  })
+
+  it('errors thrown by caller traps during classification keep their stack', () => {
+    let captured = ''
+    const p = new Proxy({}, {
+      ownKeys(t) {
+        captured = new Error('probe').stack ?? ''
+        return Reflect.ownKeys(t)
+      },
+    })
+    compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: p }])
+    expect(captured).toContain('at ')
+  })
+})
+
+describe('without Error.isError (Node before 24), in a fresh process', () => {
+  it('a null-prototype Error and an Object.prototype Error are unsupported; ordinary values still pass', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'parity-noiserror-'))
+    try {
+      const root = join(import.meta.dirname, '..')
+      execFileSync(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(root, 'tsconfig.build.json'), '--outDir', dir, '--sourceMap', 'false', '--declaration', 'false', '--declarationMap', 'false', '--inlineSources', 'false'], { encoding: 'utf8', cwd: root })
+      const script = `
+        delete Error.isError;
+        if (typeof Error.isError !== 'undefined') throw new Error('isError still present');
+        const { compareMirror } = await import(${JSON.stringify(`file://${join(dir, 'index.js')}`)});
+        const reasons = (v) => compareMirror([{ id: 'a', v }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason);
+        const out = {
+          nullProto: reasons(Object.setPrototypeOf(new Error('x'), null)),
+          objectProto: reasons(Object.setPrototypeOf(new Error('x'), Object.prototype)),
+          taggedProto: reasons(Object.defineProperty(Object.setPrototypeOf(new Error('x'), null), Symbol.toStringTag, { value: 'Object' })),
+          plain: compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: Object.create(null) }]).ok,
+          populated: compareMirror([{ id: 'a', v: { x: 1 } }], [{ id: 'a', v: { x: 1 } }]).ok,
+        };
+        console.log(JSON.stringify(out));
+      `
+      const text = execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' })
+      const out = JSON.parse(text.trim().split('\n').pop() ?? '{}') as Record<string, unknown>
+      expect(out).toEqual({
+        nullProto: ['unsupported-value'],
+        objectProto: ['unsupported-value'],
+        taggedProto: ['unsupported-value'],
+        plain: true,
+        populated: true,
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 600_000)
 })

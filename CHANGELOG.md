@@ -76,3 +76,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Promise whose `then` probe would fail after recognition (a null, string or accessor
   `constructor`, or a throwing `Symbol.species`) is `unsupported-value`, never plain data.
   A probe that cannot be completed safely fails closed.
+
+### Fixed (review round 3)
+
+- Removed the `Error.stackTraceLimit` mutation; the library no longer changes any global.
+- The built-in probe runs only for an object with no own enumerable property. A populated
+  object is plain data, and a hidden property no longer makes it unsupported.
+- Classification reuses the descriptors read during enumeration, including `constructor` and the
+  key, so nothing is read twice.
+- `Promise.prototype.then` is only called when it provably cannot run caller code (no own
+  `constructor` or an own undefined one, and a `null` or untouched `Object.prototype` prototype).
+  An empty object on any other prototype, including one from another realm, is `unsupported-value`.
+- Without `Error.isError` (Node before 24), an Error is recognized with a conservative
+  `Object.prototype.toString` fallback, or the object fails closed.
+- String keys are bounded before Unicode normalization: `limits.maxKeyLength` (default 4096) and a
+  32-mark combining run limit; refused keys make the record `invalid` (`key-too-long`,
+  `key-unnormalizable`) and key lengths count against `maxNodes`.
+- Changed rows: a 1 MB key is now refused instead of analyzed; a boxed `String` with a replaced
+  prototype (enumerable index properties) reads as plain data, a documented gap.

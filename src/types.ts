@@ -9,6 +9,8 @@ export interface Limits {
   maxNodes?: number;
   /** Deepest nesting inside one record (record fields are depth 1). Default 64, at most 1000. */
   maxDepth?: number;
+  /** Longest string key, in UTF-16 units. Longer keys are refused as invalid records. Default 4,096, at most 1,048,576. */
+  maxKeyLength?: number;
 }
 
 export type InvalidReason =
@@ -18,6 +20,8 @@ export type InvalidReason =
   | 'not-a-plain-object' // a Date, Map, class instance or other non-JSON object
   | 'missing-key' // the key field is absent
   | 'bad-key' // the key is not a non-empty string or a finite number
+  | 'key-too-long' // a string key longer than limits.maxKeyLength
+  | 'key-unnormalizable' // a key with a run of more than 32 combining marks
   | 'key-mismatch' // an object-keyed record carries a key field that disagrees with its property name
   | 'unreadable' // a Proxy trap or getter threw while reading
   | 'unsupported-value' // a function, symbol or non-JSON object inside the record

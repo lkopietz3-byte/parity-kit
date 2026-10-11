@@ -1241,7 +1241,6 @@ describe('compareMirror: native objects whose prototype was replaced', () => {
     ['a WeakSet', () => new WeakSet()],
     ['a Promise', () => Promise.resolve(1)],
     ['a boxed Number', () => Object(5) as object],
-    ['a boxed String', () => Object('s') as object],
     ['a boxed Boolean', () => Object(true) as object],
     ['a boxed BigInt', () => Object(5n) as object],
     ['an Error', () => new Error('e')],
@@ -1263,6 +1262,12 @@ describe('compareMirror: native objects whose prototype was replaced', () => {
       expect(r.invalid[0]?.reason).toBe('not-a-plain-object')
     })
   }
+
+  it('a boxed String is unsupported on its own prototype; with a replaced prototype its enumerable index properties make it plain data (a documented gap)', () => {
+    expect(compareMirror([{ id: 'a', v: Object('s') as object }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason)).toEqual(['unsupported-value'])
+    const swapped = Object.setPrototypeOf(Object('s'), null) as object
+    expect(compareMirror([{ id: 'a', v: swapped }], [{ id: 'a', v: { 0: 's' } }]).ok).toBe(true)
+  })
 
   it('a null-prototype Date is a date by brand: equal to the same time, different from {}', () => {
     const mk = (t: number): object => swapped(new Date(t), null)
@@ -1315,7 +1320,7 @@ describe('compareMirror: classifying an object never copies it or reads fields t
   it('a large null-prototype ArrayBuffer is not copied, whatever the work limit', () => {
     const buffer = Object.setPrototypeOf(new ArrayBuffer(16 * 1024 * 1024), null) as object
     const before = process.memoryUsage().arrayBuffers
-    const r = compareMirror([{ id: 'a', v: buffer }], [{ id: 'a', v: {} }], { limits: { maxNodes: 10 } })
+    const r = compareMirror([{ id: 'a', v: buffer }], [{ id: 'a', v: {} }], { limits: { maxNodes: 100 } })
     const grown = process.memoryUsage().arrayBuffers - before
     expect(r.ok).toBe(false)
     expect(grown).toBeLessThan(4 * 1024 * 1024)
@@ -1360,5 +1365,100 @@ describe('compareMirror: a Promise whose probe fails after it was recognized is 
   it('an ordinary value with a data field named constructor is compared as data', () => {
     expect(compareMirror([{ id: 'a', v: { constructor: 'x' } }], [{ id: 'a', v: { constructor: 'x' } }]).ok).toBe(true)
     expect(compareMirror([{ id: 'a', v: { constructor: 'x' } }], [{ id: 'a', v: { constructor: 'y' } }]).ok).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix round 4: rows added after review of 2f5e295
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: the Promise probe is only attempted when it provably cannot run caller code', () => {
+  const reasons = (v: object): string[] => compareMirror([{ id: 'a', v }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason)
+  const promiseWith = (proto: object | null, constructorValue?: PropertyDescriptor): object => {
+    const p = Object.setPrototypeOf(Promise.resolve(1), proto) as object
+    if (constructorValue !== undefined) Object.defineProperty(p, 'constructor', constructorValue)
+    return p
+  }
+
+  it('a Proxy constructor whose get trap throws is never consulted and is unsupported', () => {
+    let touched = 0
+    const trap = new Proxy({}, { get() { touched += 1; throw new Error('species') } })
+    expect(reasons(promiseWith(null, { value: trap }))).toEqual(['unsupported-value'])
+    expect(touched).toBe(0)
+  })
+
+  it('an object-valued constructor of any kind is unsupported', () => {
+    expect(reasons(promiseWith(null, { value: {} }))).toEqual(['unsupported-value'])
+    expect(reasons(promiseWith(null, { value: Object }))).toEqual(['unsupported-value'])
+    expect(reasons(promiseWith(Object.prototype, { value: {} }))).toEqual(['unsupported-value'])
+  })
+
+  it('a Promise with no constructor, or an own undefined one, on a null or Object.prototype prototype is unsupported', () => {
+    expect(reasons(promiseWith(null))).toEqual(['unsupported-value'])
+    expect(reasons(promiseWith(Object.prototype))).toEqual(['unsupported-value'])
+    expect(reasons(promiseWith(null, { value: undefined }))).toEqual(['unsupported-value'])
+    expect(reasons(promiseWith(Object.prototype, { value: undefined }))).toEqual(['unsupported-value'])
+  })
+
+  it('a Promise on any other prototype is unsupported without calling then', () => {
+    const custom = Object.create(null, { then: { value() { throw new Error('then') } } }) as object
+    expect(reasons(promiseWith(custom))).toEqual(['unsupported-value'])
+  })
+
+  it('an empty object on any prototype other than null or Object.prototype cannot be ruled out, so it is unsupported', () => {
+    const custom = Object.create(Object.create(null) as object) as object
+    expect(reasons(custom)).toEqual(['unsupported-value'])
+    const other = vm.runInNewContext('({})') as object
+    expect(reasons(other)).toEqual(['unsupported-value'])
+  })
+
+  it('ordinary empty objects, and a populated object from another realm, still pass', () => {
+    expect(compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: Object.create(null) as object }]).ok).toBe(true)
+    expect(compareMirror([{ id: 'a', v: vm.runInNewContext("({ x: 1, y: [] })") }], [{ id: 'a', v: { x: 1, y: [] } }]).ok).toBe(true)
+  })
+
+  it('populated plain data with a hidden property is plain data', () => {
+    const v = Object.defineProperty({ constructor: 'widget', x: 1 }, 'hidden', { value: 0 })
+    const r = compareMirror([{ id: 'a', v }], [{ id: 'a', v: { constructor: 'widget', x: 1 } }])
+    expect(r.ok).toBe(true)
+    expect(r.invalid).toEqual([])
+    const w = Object.defineProperty({ x: 1 }, 'hidden', { value: 0 })
+    expect(compareMirror([{ id: 'a', v: w }], [{ id: 'a', v: { x: 1 } }]).ok).toBe(true)
+  })
+})
+
+describe('compareMirror: keys that cannot be analyzed within a bound are invalid records', () => {
+  const reasons = (id: string, limits?: { maxKeyLength?: number }): string[] =>
+    compareMirror([{ id, v: 1 }], [{ id, v: 1 }], limits === undefined ? undefined : { limits }).invalid.map((i) => i.reason)
+
+  it('a key longer than maxKeyLength (default 4096)', () => {
+    expect(reasons('k'.repeat(4096))).toEqual([])
+    expect(reasons('k'.repeat(4097))).toEqual(['key-too-long', 'key-too-long'])
+  })
+
+  it('maxKeyLength can be lowered or raised', () => {
+    expect(reasons('k'.repeat(11), { maxKeyLength: 10 })).toEqual(['key-too-long', 'key-too-long'])
+    expect(reasons('k'.repeat(10), { maxKeyLength: 10 })).toEqual([])
+    expect(reasons('k'.repeat(10_000), { maxKeyLength: 20_000 })).toEqual([])
+    expect(() => compareMirror([], [], { limits: { maxKeyLength: 0 } })).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+
+  it('a run of more than 32 combining marks', () => {
+    expect(reasons(`e${'\u0301'.repeat(32)}`)).toEqual([])
+    expect(reasons(`e${'\u0301'.repeat(33)}`)).toEqual(['key-unnormalizable', 'key-unnormalizable'])
+    expect(reasons(`e${'\u0315'.repeat(20)}${'\u0300'.repeat(20)}`)).toEqual(['key-unnormalizable', 'key-unnormalizable'])
+  })
+
+  it('an id-keyed dataset applies the same limits to its property names', () => {
+    const long = 'k'.repeat(5000)
+    const r = compareMirror({ [long]: { v: 1 } }, { [long]: { v: 1 } })
+    expect(r.invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
+  })
+
+  it('a refused key is not reported as missing or extra on the other side', () => {
+    const long = 'k'.repeat(5000)
+    const r = compareMirror([{ id: long }, { id: 'b' }], [{ id: 'b' }])
+    expect(r.missing).toEqual([])
+    expect(r.invalid).toHaveLength(1)
   })
 })

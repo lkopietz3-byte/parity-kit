@@ -35,27 +35,39 @@ imports a `node:` module, so it is browser-safe.
   Proxy's `ownKeys` order cannot matter. Inherited properties, symbol keys,
   `toJSON`, `then`, `toString` and `valueOf` are not used. What was validated
   is what is compared and reported.
-- **Plain data only.** Records and nested objects must be plain (prototype
-  `null`, or a prototype whose prototype is `null`, from any realm). Nothing
-  is classified by a property the caller controls: no `Symbol.toStringTag`,
-  `constructor`, `toJSON` or inherited getter is read. Built-ins are
-  recognized by calling captured built-in methods that only succeed on a real
-  instance (`src/brand.ts`); that includes Dates (`Date.prototype.getTime`),
-  which become date values. A failed probe throws internally and is slow (so
-  the sweep switches `Error.stackTraceLimit` to 0 while it runs, restoring it
-  in a `finally`, and is skipped if Error is frozen), so the sweep runs only for an object with no enumerable own properties, a
-  non-enumerable own property, or a non-plain prototype, and typed arrays are
-  always caught by `ArrayBuffer.isView`. The documented gap: a built-in with a
-  replaced prototype and its own enumerable properties reads as a plain object.
+- **Plain data only, and a deliberately small classifier.** Records and nested
+  objects must be plain (prototype `null`, or a prototype whose prototype is
+  `null`, from any realm). Nothing is classified by a property the caller
+  controls. An object with a non-plain prototype is a Date (recognized with
+  `Date.prototype.getTime`, which only succeeds on a real Date) or unsupported.
+  An object with a plain prototype and **at least one own enumerable property
+  is plain data**, whatever else it carries (a hidden non-enumerable property
+  does not change that). Only an object with **no own enumerable property**
+  is probed for being a built-in whose prototype was replaced (`src/brand.ts`:
+  captured built-in methods that only succeed on a real instance). That probe
+  throws internally and costs tens of microseconds per empty-looking object;
+  it does not change any global (no `Error.stackTraceLimit`), and it is linear.
+  The probe also refuses an empty object whose prototype is neither `null` nor
+  this realm's untouched `Object.prototype` (an empty object from another
+  realm is therefore unsupported), because a Promise cannot be ruled out there.
+  This is the last exotic-object class the kit fixes: Proxies are read through
+  their traps, and built-ins or host objects disguised with a replaced
+  prototype and own enumerable properties are read as plain data. Further finds
+  of that kind are documented, not fixed.
+- **Probes that cannot be pure have a precondition.** Recognizing a Promise
+  calls `then`, which looks up `constructor`: it is called only when the
+  object has no own `constructor` (or an own data one holding `undefined`) and
+  its prototype is `null` or the untouched `Object.prototype`. Without
+  `Error.isError` (Node before 24), recognizing an Error uses the captured
+  `Object.prototype.toString`, which looks up `Symbol.toStringTag`: it is used
+  only with no own tag and a `null` or untouched `Object.prototype`. Anything
+  else is `unsupported-value`, never plain data. A probe failure means "plain"
+  only when the failure is the brand check itself.
 - **Classification never copies and never reads unselected data.** No
-  `structuredClone`, no `toString`, no property `Get`. A probe that can fail
-  after recognizing its brand (Promise: `then` then looks up `constructor`) is
-  only called once a descriptor-only check shows it cannot, and an object that
-  cannot be ruled out is `unsupported-value`. A probe failure never means
-  "plain data" unless the failure is the brand check itself.
-- **One read per property.** A record's key, each selected field and the
-  reviewed field are looked up once; the descriptor captured then is the value
-  used. `test/hostile.test.ts` counts descriptor reads through a Proxy.
+  `structuredClone`, no property `Get`.
+- **One read per property.** A record's key, each selected field, the reviewed
+  field and `constructor` are looked up once; the descriptor captured then is
+  the value used, and classification reuses it (`ShapeFacts`). `test/hostile.test.ts` counts descriptor reads through a Proxy.
 - **Our errors are recognized by identity.** Caller code can throw anything.
   `catch` blocks test `isOwnError(value)` (a `WeakSet` membership check, which
   runs no traps) before any `instanceof`, and thrown values are never coerced:
