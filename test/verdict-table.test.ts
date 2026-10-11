@@ -1287,3 +1287,78 @@ describe('compareMirror: native objects whose prototype was replaced', () => {
     compareMirror([{ id: 'a', v: swapped(p, null) }], [{ id: 'a', v: {} }])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fix round 2: rows added after review of 4c38569
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: classifying an object never copies it or reads fields that were not selected', () => {
+  it('an excluded getter on an object with no selected fields is never run, so it cannot rewrite another record', () => {
+    let runs = 0
+    const b = { v: 1 }
+    const a = { get ignored(): number { runs += 1; b.v = 2; return 0 } }
+    const r = compareMirror({ a: {}, b: { v: 2 } }, { a, b }, { fields: ['v'] })
+    expect(runs).toBe(0)
+    expect(r.ok).toBe(false)
+    expect(r.changed).toMatchObject([{ id: 'b', field: 'v', canonical: 2, mirror: 1 }])
+  })
+
+  it('the same in an array dataset, with the excluded getter on a nested empty-looking value', () => {
+    let runs = 0
+    const target = { v: 1 }
+    const empty = { get hidden(): number { runs += 1; target.v = 2; return 0 } }
+    const r = compareMirror([{ id: 'a', e: {} }, { id: 'b', v: 2 }], [{ id: 'a', e: empty }, { id: 'b', ...target }], { fields: ['v'] })
+    expect(runs).toBe(0)
+    expect(r.changed).toMatchObject([{ id: 'b', field: 'v' }])
+  })
+
+  it('a large null-prototype ArrayBuffer is not copied, whatever the work limit', () => {
+    const buffer = Object.setPrototypeOf(new ArrayBuffer(16 * 1024 * 1024), null) as object
+    const before = process.memoryUsage().arrayBuffers
+    const r = compareMirror([{ id: 'a', v: buffer }], [{ id: 'a', v: {} }], { limits: { maxNodes: 10 } })
+    const grown = process.memoryUsage().arrayBuffers - before
+    expect(r.ok).toBe(false)
+    expect(grown).toBeLessThan(4 * 1024 * 1024)
+  })
+})
+
+describe('compareMirror: a Promise whose probe fails after it was recognized is unsupported, never plain data', () => {
+  const promiseWith = (proto: object | null, constructorValue: PropertyDescriptor | undefined): object => {
+    const p = Object.setPrototypeOf(Promise.resolve(1), proto) as object
+    if (constructorValue !== undefined) Object.defineProperty(p, 'constructor', constructorValue)
+    return p
+  }
+  const verdict = (p: object): string[] =>
+    compareMirror([{ id: 'a', v: p }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason)
+
+  it('a null constructor', () => {
+    expect(verdict(promiseWith(null, { value: null }))).toEqual(['unsupported-value'])
+  })
+  it('a string constructor', () => {
+    expect(verdict(promiseWith(null, { value: 'x' }))).toEqual(['unsupported-value'])
+  })
+  it('a throwing constructor getter that is never run', () => {
+    let runs = 0
+    const p = promiseWith(null, { get() { runs += 1; throw new Error('no') } })
+    expect(verdict(p)).toEqual(['unsupported-value'])
+    expect(runs).toBe(0)
+  })
+  it('a constructor whose Symbol.species getter would throw', () => {
+    const ctor = Object.defineProperty({}, Symbol.species, { get() { throw new Error('no') } })
+    expect(verdict(promiseWith(null, { value: ctor }))).toEqual(['unsupported-value'])
+  })
+  it('a plain-prototype Promise with a bad constructor', () => {
+    expect(verdict(promiseWith(Object.prototype, { value: null }))).toEqual(['unsupported-value'])
+  })
+  it('a Promise with no constructor at all, or a good one', () => {
+    expect(verdict(promiseWith(null, undefined))).toEqual(['unsupported-value'])
+    expect(verdict(promiseWith(Object.prototype, undefined))).toEqual(['unsupported-value'])
+  })
+  it('an ordinary empty object still passes', () => {
+    expect(compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: Object.create(null) as object }]).ok).toBe(true)
+  })
+  it('an ordinary value with a data field named constructor is compared as data', () => {
+    expect(compareMirror([{ id: 'a', v: { constructor: 'x' } }], [{ id: 'a', v: { constructor: 'x' } }]).ok).toBe(true)
+    expect(compareMirror([{ id: 'a', v: { constructor: 'x' } }], [{ id: 'a', v: { constructor: 'y' } }]).ok).toBe(false)
+  })
+})

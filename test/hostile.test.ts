@@ -448,3 +448,78 @@ describe('thrown values are never inspected or coerced', () => {
     expect(() => compareMirror([], [], options)).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
   })
 })
+
+describe('every property of a record is read once (default and selected-field paths)', () => {
+  function counted<T extends object>(target: T, hook?: (key: string, n: number, t: T) => void): { proxy: T; reads: Map<string, number> } {
+    const reads = new Map<string, number>()
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(t, k) {
+        const key = String(k)
+        const n = (reads.get(key) ?? 0) + 1
+        reads.set(key, n)
+        hook?.(key, n, t)
+        return Reflect.getOwnPropertyDescriptor(t, k)
+      },
+    })
+    return { proxy, reads }
+  }
+
+  it('the key cannot be read twice to change another field in between', () => {
+    const mirror = counted({ id: 'a', v: 1 }, (k, n, t) => {
+      if (k === 'id' && n === 2) t.v = 2
+    })
+    const r = compareMirror([{ id: 'a', v: 2 }], [mirror.proxy])
+    expect(mirror.reads.get('id')).toBe(1)
+    expect(r.changed).toMatchObject([{ id: 'a', field: 'v', canonical: 2, mirror: 1 }])
+  })
+
+  it('a changed value cannot fabricate stamp evidence', () => {
+    const after = counted({ id: 'a', value: 1, source: 's', reviewedOn: '2026-02-01' }, (k, n, t) => {
+      if (k === 'id' && n === 2) t.value = 2
+    })
+    const r = auditReviewStamps([{ id: 'a', value: 1, source: 's', reviewedOn: '2026-01-01' }], [after.proxy], { reviewedField: 'reviewedOn', sourceFields: ['source'] })
+    expect(after.reads.get('id')).toBe(1)
+    expect(r.stampOnly).toHaveLength(1)
+  })
+
+  it('default path: id and every field once', () => {
+    const m = counted({ id: 'a', v: 1, w: 2, reviewedOn: '2026-06-08' })
+    compareMirror([{ id: 'a', v: 1, w: 2, reviewedOn: '2026-06-08' }], [m.proxy], { reviewedField: 'reviewedOn' })
+    expect([...m.reads.entries()].sort()).toEqual([['id', 1], ['reviewedOn', 1], ['v', 1], ['w', 1]])
+  })
+
+  it('selected-field path: the key, each selected field and the reviewed field once; others never', () => {
+    const m = counted({ id: 'a', v: 1, w: 2, other: 3, reviewedOn: '2026-06-08' })
+    compareMirror([{ id: 'a', v: 1, w: 2, other: 9, reviewedOn: '2026-06-08' }], [m.proxy], { fields: ['v', 'w'], reviewedField: 'reviewedOn' })
+    expect([...m.reads.entries()].sort()).toEqual([['id', 1], ['reviewedOn', 1], ['v', 1], ['w', 1]])
+  })
+
+  it('the key read as a selected field is still read once', () => {
+    const m = counted({ id: 'a', v: 1 })
+    compareMirror([{ id: 'a', v: 1 }], [m.proxy], { fields: ['id', 'v'] })
+    expect(m.reads.get('id')).toBe(1)
+    expect(m.reads.get('v')).toBe(1)
+  })
+
+  it('id-keyed records read their key field once', () => {
+    const m = counted({ id: 'a', v: 1 })
+    compareMirror({ a: { id: 'a', v: 1 } }, { a: m.proxy })
+    expect([...m.reads.entries()].sort()).toEqual([['id', 1], ['v', 1]])
+  })
+
+  it('auditReviewStamps reads each field once, on both snapshots', () => {
+    const rec = { id: 'a', value: 1, source: 's', by: 'p', expires: '2026-12-01', reviewedOn: '2026-06-08' }
+    const b = counted({ ...rec })
+    const a = counted({ ...rec, reviewedOn: '2026-09-01', value: 2 })
+    auditReviewStamps([b.proxy], [a.proxy], { reviewedField: 'reviewedOn', sourceFields: ['source'], reviewerField: 'by', expiryField: 'expires' })
+    for (const side of [b, a]) for (const n of side.reads.values()) expect(n).toBe(1)
+    expect(a.reads.size).toBe(6)
+  })
+
+  it('a value that is classified (an empty-looking object) is not re-read when selected', () => {
+    const inner = counted({})
+    const r = compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: inner.proxy }])
+    expect(r.ok).toBe(true)
+    for (const n of inner.reads.values()) expect(n).toBeLessThanOrEqual(1)
+  })
+})

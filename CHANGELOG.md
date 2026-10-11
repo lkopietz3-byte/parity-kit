@@ -65,3 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list ends in `too-large` instead of an unbounded loop.
 - Our own errors are recognized by identity, and thrown values are never inspected or coerced:
   a Proxy thrown from a getter now marks only that record `invalid`.
+
+### Fixed (review round 2)
+
+- Classifying an object with no selected fields no longer clones it, so an excluded getter is
+  not run and the work limit cannot be bypassed by a large built-in. Classification uses
+  bounded internal-slot probes only.
+- The record key is looked up once on the default path (it was read again during the field
+  scan), so a Proxy cannot change a field between two reads of the key.
+- A Promise whose `then` probe would fail after recognition (a null, string or accessor
+  `constructor`, or a throwing `Symbol.species`) is `unsupported-value`, never plain data.
+  A probe that cannot be completed safely fails closed.

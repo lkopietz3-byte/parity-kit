@@ -41,11 +41,21 @@ imports a `node:` module, so it is browser-safe.
   `constructor`, `toJSON` or inherited getter is read. Built-ins are
   recognized by calling captured built-in methods that only succeed on a real
   instance (`src/brand.ts`); that includes Dates (`Date.prototype.getTime`),
-  which become date values. A failed probe throws internally and is slow, so
-  the sweep runs only for an object with no enumerable own properties, a
+  which become date values. A failed probe throws internally and is slow (so
+  the sweep switches `Error.stackTraceLimit` to 0 while it runs, restoring it
+  in a `finally`, and is skipped if Error is frozen), so the sweep runs only for an object with no enumerable own properties, a
   non-enumerable own property, or a non-plain prototype, and typed arrays are
   always caught by `ArrayBuffer.isView`. The documented gap: a built-in with a
   replaced prototype and its own enumerable properties reads as a plain object.
+- **Classification never copies and never reads unselected data.** No
+  `structuredClone`, no `toString`, no property `Get`. A probe that can fail
+  after recognizing its brand (Promise: `then` then looks up `constructor`) is
+  only called once a descriptor-only check shows it cannot, and an object that
+  cannot be ruled out is `unsupported-value`. A probe failure never means
+  "plain data" unless the failure is the brand check itself.
+- **One read per property.** A record's key, each selected field and the
+  reviewed field are looked up once; the descriptor captured then is the value
+  used. `test/hostile.test.ts` counts descriptor reads through a Proxy.
 - **Our errors are recognized by identity.** Caller code can throw anything.
   `catch` blocks test `isOwnError(value)` (a `WeakSet` membership check, which
   runs no traps) before any `instanceof`, and thrown values are never coerced:

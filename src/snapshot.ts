@@ -1,4 +1,4 @@
-import { emptyObjectKind, isBufferView, nativeKind } from './brand.js';
+import { isBufferView, nativeKind } from './brand.js';
 import { ParityError, isOwnError, registerOwnError } from './errors.js';
 import { descriptorValue, isPlainObject, readOwn, type Budget } from './options.js';
 import type { InvalidReason, Key } from './types.js';
@@ -128,7 +128,7 @@ interface Slots {
  * properties; without, every own enumerable string-keyed property. Every
  * probe, present or absent, is charged to the work budget.
  */
-function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, skip?: string): Slots {
+function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, skip?: string, skipDesc?: PropertyDescriptor): Slots {
   const out: Slot[] = [];
   let hidden = false;
   if (names !== null) {
@@ -143,10 +143,15 @@ function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, ski
     spend(ctx.budget, keys.length);
     for (const key of keys) {
       if (typeof key !== 'string') continue;
+      if (key === skip) {
+        // The caller already read this descriptor; reading it again could see a different one.
+        if (skipDesc !== undefined && skipDesc.enumerable !== true) hidden = true;
+        continue;
+      }
       const desc = Reflect.getOwnPropertyDescriptor(object, key);
       if (desc === undefined) continue;
       if (desc.enumerable !== true) hidden = true;
-      else if (key !== skip) out.push({ name: key, desc });
+      else out.push({ name: key, desc });
     }
   }
   out.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
@@ -214,7 +219,7 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
       // An object that looks empty, or carries hidden own properties, may be a
       // built-in whose prototype was replaced (a null-prototype Map or Date).
       if (slots.length === 0 || hidden) {
-        const kind = slots.length === 0 ? emptyObjectKind(object) : nativeKind(object);
+        const kind = nativeKind(object);
         if (kind !== undefined && kind !== 'other') return new DateSnap(kind.date);
         if (kind === 'other') throw unsupported(ctx, 'unsupported-value', 'a built-in object with its prototype replaced cannot be compared');
       }
@@ -379,11 +384,11 @@ function readRecord(
       }
     }
     spend(ctx.budget, 1);
-    const { slots, hidden } = ownSlots(raw, cfg.names, ctx, cfg.key);
+    const { slots, hidden } = ownSlots(raw, cfg.names, ctx, cfg.key, keyDesc);
     // A record with nothing in it, or with hidden own properties, may be a
     // built-in whose prototype was replaced (a null-prototype Map or Date).
     if ((slots.length === 0 && keyDesc === undefined) || hidden) {
-      if ((slots.length === 0 ? emptyObjectKind(raw) : nativeKind(raw)) !== undefined) {
+      if (nativeKind(raw) !== undefined) {
         bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
         return;
       }
@@ -464,7 +469,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       if (desc.enumerable === true) slots.push({ id: key, desc });
       else hidden = true;
     }
-    if ((slots.length === 0 || hidden) && (slots.length === 0 ? emptyObjectKind(input) : nativeKind(input)) !== undefined) {
+    if ((slots.length === 0 || hidden) && nativeKind(input) !== undefined) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
