@@ -170,6 +170,32 @@ function slotValue(object: object, slot: Slot): unknown {
   return descriptorValue(object, slot.desc);
 }
 
+/**
+ * For a record read with selected fields: does it have an own enumerable
+ * property that was not selected? Reads each remaining key's descriptor once
+ * (the selected names and the key were already probed), fills in `facts`, and
+ * runs no getter.
+ */
+function hasOtherEnumerable(object: object, cfg: ReadConfig, ctx: Ctx, facts: ShapeFacts): boolean {
+  const keys = Reflect.ownKeys(object);
+  spend(ctx.budget, keys.length);
+  facts.hasOwnTag = false;
+  if (facts.constructorDesc === undefined) facts.constructorDesc = { desc: undefined };
+  let any = false;
+  for (const key of keys) {
+    if (typeof key !== 'string') {
+      if (key === Symbol.toStringTag) facts.hasOwnTag = true;
+      continue;
+    }
+    if (key === cfg.key || cfg.nameSet?.has(key) === true) continue;
+    const desc = Reflect.getOwnPropertyDescriptor(object, key);
+    if (desc === undefined) continue;
+    if (key === 'constructor') facts.constructorDesc = { desc };
+    if (desc.enumerable === true) any = true;
+  }
+  return any;
+}
+
 function snap(value: unknown, ctx: Ctx, depth: number): Snap {
   spend(ctx.budget, 1);
   switch (typeof value) {
@@ -323,6 +349,8 @@ export interface ReadConfig {
   names: readonly string[] | null;
   /** Also keep the key field among the record's fields (when a caller asked for it by name). */
   includeKey?: boolean;
+  /** `names` as a set (filled in by `readDataset`). */
+  nameSet?: ReadonlySet<string>;
 }
 
 export interface ReadDataset {
@@ -374,7 +402,7 @@ function readRecord(
     const problem = typeof keyValue === 'string' ? keyProblem(keyValue, ctx.budget.maxKeyLength) : undefined;
     // A refused key is never normalized, so only a key that will be analyzed is charged.
     if (typeof keyValue === 'string' && problem === undefined) spend(ctx.budget, keyValue.length);
-    if (mode === 'array' && validKey(keyValue) && problem === undefined) id = keyValue;
+    if (mode === 'array' && problem === undefined && validKey(keyValue)) id = keyValue;
     if (isBufferView(raw)) {
       bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
       return;
@@ -389,17 +417,18 @@ function readRecord(
         bad('missing-key', `the key field "${cfg.key}" is missing`);
         return;
       }
+      if (problem !== undefined) {
+        // Refuse before any trim or whitespace scan of an oversized key.
+        bad(problem, `the key is ${problem === 'key-too-long' ? `longer than ${ctx.budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}`);
+        return;
+      }
       if (!validKey(keyValue)) {
         bad('bad-key', `the key field "${cfg.key}" must be a non-empty string or a finite number`);
         return;
       }
-      if (problem !== undefined) {
-        bad(problem, `the key is ${problem === 'key-too-long' ? `longer than ${ctx.budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}`);
-        return;
-      }
       id = keyValue;
     } else if (keyValue !== undefined) {
-      if (!validKey(keyValue) || String(keyValue) !== position) {
+      if (problem !== undefined || !validKey(keyValue) || String(keyValue) !== position) {
         bad('key-mismatch', `property "${String(position)}" carries ${cfg.key} ${typeof keyValue === 'string' || typeof keyValue === 'number' ? JSON.stringify(keyValue) : `of type ${typeof keyValue}`}`);
         return;
       }
@@ -408,7 +437,13 @@ function readRecord(
     const { slots, facts } = ownSlots(raw, cfg.names, ctx, cfg.key, keyDesc);
     // A record with no own enumerable property may be a built-in whose prototype
     // was replaced (a null-prototype Map or Date).
-    if (slots.length === 0 && keyDesc?.enumerable !== true) {
+    // With selected fields the slots only cover the selection, so look at the record's
+    // own keys (descriptors only; no excluded value is read and no getter runs).
+    const populated =
+      slots.length > 0 ||
+      keyDesc?.enumerable === true ||
+      (cfg.names !== null && hasOtherEnumerable(raw, cfg, ctx, facts));
+    if (!populated) {
       if (nativeKind(raw, proto, facts) !== undefined) {
         bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
         return;
@@ -440,6 +475,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
   const entries: DatasetEntry[] = [];
   const invalid: DatasetInvalid[] = [];
   const ctx: Ctx = { budget, ancestors: new Set(), trail: [] };
+  const recordCfg: ReadConfig = cfg.names === null ? cfg : { ...cfg, nameSet: new Set(cfg.names) };
   try {
     if (typeof input !== 'object' || input === null) {
       throw new ParityError('bad-input', `${side} must be an array of records or an object keyed by id`);
@@ -468,7 +504,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
           entries.push({ id: undefined, position: i, fields: undefined });
           continue;
         }
-        readRecord(raw, i, 'array', cfg, ctx, entries, invalid);
+        readRecord(raw, i, 'array', recordCfg, ctx, entries, invalid);
       }
       return { entries, invalid, mode: 'array' };
     }
@@ -507,19 +543,19 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
         entries.push({ id, position: id, fields: undefined });
         continue;
       }
-      if (id.trim() === '') {
-        invalid.push({ position: id, reason: 'bad-key', detail: 'a record key must not be empty' });
-        entries.push({ id: undefined, position: id, fields: undefined });
-        continue;
-      }
       const problem = keyProblem(id, budget.maxKeyLength);
-      if (problem === undefined) spend(budget, id.length);
       if (problem !== undefined) {
         invalid.push({ position: id, reason: problem, detail: `the key is ${problem === 'key-too-long' ? `longer than ${budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}` });
         entries.push({ id: undefined, position: id, fields: undefined });
         continue;
       }
-      readRecord(raw, id, 'object', cfg, ctx, entries, invalid);
+      if (id.trim() === '') {
+        invalid.push({ position: id, reason: 'bad-key', detail: 'a record key must not be empty' });
+        entries.push({ id: undefined, position: id, fields: undefined });
+        continue;
+      }
+      spend(budget, id.length);
+      readRecord(raw, id, 'object', recordCfg, ctx, entries, invalid);
     }
     return { entries, invalid, mode: 'object' };
   } catch (error) {

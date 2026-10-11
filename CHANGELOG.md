@@ -94,3 +94,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `key-unnormalizable`) and key lengths count against `maxNodes`.
 - Changed rows: a 1 MB key is now refused instead of analyzed; a boxed `String` with a replaced
   prototype (enumerable index properties) reads as plain data, a documented gap.
+
+### Fixed (review round 4)
+
+- A populated record with no selected fields is no longer given the empty-object built-in probe:
+  emptiness is decided from the record's own enumerable keys (descriptors only), not from the
+  selection. A selected field that exists only in the mirror is now `extra-in-mirror`.
+- An oversized key is refused before any trim or whitespace scan, on the array and id-keyed
+  paths, so its cost no longer grows with its length.

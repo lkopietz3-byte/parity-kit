@@ -1462,3 +1462,42 @@ describe('compareMirror: keys that cannot be analyzed within a bound are invalid
     expect(r.invalid).toHaveLength(1)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fix round 5: rows added after review of 66b64c4
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: emptiness is decided from the record, not from the selection', () => {
+  it('a populated record with no selected fields is plain data, so a selected extra field is reported', () => {
+    const r = compareMirror({ a: { constructor: 'Widget' } }, { a: { constructor: 'Widget', rate: 2 } }, { fields: ['rate'] })
+    expect(r.invalid).toEqual([])
+    expect(r.status).toBe('flagged')
+    expect(r.changed).toEqual([{ id: 'a', field: 'rate', change: 'extra-in-mirror', canonical: undefined, mirror: 2 }])
+  })
+
+  it('the same in an array dataset, and with a record that only has other fields', () => {
+    const r = compareMirror([{ id: 'a', other: 1 }], [{ id: 'a', other: 2, rate: 3 }], { fields: ['rate'] })
+    expect(r.invalid).toEqual([])
+    expect(r.changed).toMatchObject([{ id: 'a', field: 'rate', change: 'extra-in-mirror' }])
+  })
+
+  it('excluded getters on such a record are never run', () => {
+    let runs = 0
+    const record = { id: 'a', get excluded(): number { runs += 1; return 1 } }
+    const r = compareMirror([{ id: 'a' }], [record], { fields: ['rate'] })
+    expect(runs).toBe(0)
+    expect(r.ok).toBe(true)
+  })
+
+  it('a record with truly nothing in it is still probed (a null-prototype Map as a selected-field record)', () => {
+    const map = Object.setPrototypeOf(new Map([[1, 2]]), null) as object
+    const r = compareMirror({ a: map }, { a: {} }, { fields: ['rate'] })
+    expect(r.ok).toBe(false)
+    expect(r.invalid[0]?.reason).toBe('not-a-plain-object')
+  })
+
+  it('a record whose only own properties are hidden is still probed', () => {
+    const hiddenOnly = Object.defineProperty({}, 'h', { value: 1 })
+    expect(compareMirror({ a: hiddenOnly }, { a: {} }, { fields: ['rate'] }).ok).toBe(true)
+  })
+})

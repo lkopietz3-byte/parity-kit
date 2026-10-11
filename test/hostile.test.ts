@@ -649,3 +649,20 @@ describe('without Error.isError (Node before 24), in a fresh process', () => {
     }
   }, 600_000)
 })
+
+describe('a record with nothing selected reads each property descriptor once and no excluded value', () => {
+  it('descriptor reads', () => {
+    const reads = new Map<string, number>()
+    let getterRuns = 0
+    const target = { id: 'a', constructor: 'x', rate: 2, get excluded(): number { getterRuns += 1; return 0 } }
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(t, k) {
+        reads.set(String(k), (reads.get(String(k)) ?? 0) + 1)
+        return Reflect.getOwnPropertyDescriptor(t, k)
+      },
+    })
+    compareMirror([{ id: 'a' }], [proxy], { fields: ['nothing-here'] })
+    expect(getterRuns).toBe(0)
+    for (const n of reads.values()) expect(n).toBe(1)
+  })
+})

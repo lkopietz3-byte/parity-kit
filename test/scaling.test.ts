@@ -151,6 +151,31 @@ describe('1 MB of text', () => {
 })
 
 describe('hostile keys', () => {
+  it('overlength keys are refused without being scanned (no trim, no whitespace scan)', () => {
+    const blank = ' '.repeat(1_000_000)
+    const arrayRecords = Array.from({ length: 400 }, () => ({ id: blank }))
+    const objectRecords: Record<string, object> = {}
+    objectRecords[blank] = { v: 1 }
+    const ms = cpuMs(() => {
+      const r = compareMirror(arrayRecords, arrayRecords)
+      expect(r.invalid).toHaveLength(800)
+    }, 1)
+    expect(ms).toBeLessThan(150)
+    const ms2 = cpuMs(() => {
+      for (let i = 0; i < 400; i += 1) compareMirror(objectRecords, objectRecords)
+    }, 1)
+    expect(ms2).toBeLessThan(150)
+  })
+
+  it('overlength key cost does not grow with the key length', () => {
+    const run = (n: number) => () => {
+      const key = ' '.repeat(n)
+      const records = Array.from({ length: 300 }, () => ({ id: key }))
+      for (let i = 0; i < 20; i += 1) compareMirror(records, records)
+    }
+    expect(ratio(run(250_000), run(1_000_000))).toBeLessThan(10)
+  })
+
   it('a key built to make normalization quadratic is refused quickly, whatever maxNodes says', () => {
     for (const n of [16_000, 32_000, 100_000]) {
       const id = `a${'\u0315'.repeat(n)}${'\u0300'.repeat(n)}`
