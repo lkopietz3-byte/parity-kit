@@ -72,6 +72,12 @@ export interface MirrorResult {
   changed: ChangedField[];
   stampHidesDrift: StampHidesDrift[];
   duplicateKeys: DuplicateKey[];
+  /**
+   * Selected names (`fields`, `reviewedField`) that appear in no readable record on
+   * either side, in the order they were given. A misspelled name lands here; nothing
+   * was compared for it, so the result is never `ok`.
+   */
+  unknownFields: string[];
   /** Look-alike keys. Reported, never merged. */
   suspectKeys: SuspectKeyGroup[];
   invalid: InvalidEntry[];
@@ -120,6 +126,41 @@ export function invalidOf(side: string, read: ReadDataset): InvalidEntry[] {
     if (item.detail !== undefined) entry.detail = item.detail;
     return entry;
   });
+}
+
+/**
+ * Which of `names` appear in no readable record of the given datasets? The key
+ * field counts as present when any record has a usable key. Empty when there is
+ * no readable record at all (there is nothing to say a name is missing from).
+ * One pass over the fields that were read.
+ */
+export function findUnknownFields(
+  datasets: ReadonlyArray<readonly DatasetEntry[]>,
+  names: readonly string[],
+  key: string,
+): string[] {
+  if (names.length === 0) return [];
+  const wanted = new Set(names);
+  const found = new Set<string>();
+  let readable = false;
+  for (const entries of datasets) {
+    for (const entry of entries) {
+      if (entry.fields === undefined) continue;
+      readable = true;
+      if (entry.id !== undefined && wanted.has(key)) found.add(key);
+      for (const field of entry.fields.keys()) if (wanted.has(field)) found.add(field);
+    }
+  }
+  if (!readable) return [];
+  const out: string[] = [];
+  const emitted = new Set<string>();
+  for (const name of names) {
+    if (!found.has(name) && !emitted.has(name)) {
+      emitted.add(name);
+      out.push(name);
+    }
+  }
+  return out;
 }
 
 export function emptyDatasetInvalid(side: string): InvalidEntry {
@@ -249,9 +290,14 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     foldCase,
   );
 
+  const unknownFields = findUnknownFields(
+    [c.entries, m.entries],
+    [...(fields ?? []), ...(reviewedField === undefined ? [] : [reviewedField])],
+    key,
+  );
   const flagged =
     missing.length + extra.length + changed.length + stampHidesDrift.length + duplicateKeys.length > 0;
-  const unknown = invalid.length + suspectKeys.length > 0;
+  const unknown = invalid.length + suspectKeys.length + unknownFields.length > 0;
   const status: Status = flagged ? 'flagged' : unknown ? 'unknown' : 'ok';
   return {
     ok: status === 'ok',
@@ -262,6 +308,7 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     changed,
     stampHidesDrift,
     duplicateKeys,
+    unknownFields,
     suspectKeys,
     invalid,
   };

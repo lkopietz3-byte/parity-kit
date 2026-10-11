@@ -67,12 +67,27 @@ if (!result.ok) {
     { "id": "chase-ur", "reviewedValue": "2026-06-08", "fields": ["baselineCpp"] }
   ],
   "duplicateKeys": [],
+  "unknownFields": [],
   "suspectKeys": [],
   "invalid": []
 }
 ```
 
 Read it as: the extension lacks `bilt`, has a `cap-one` the source does not, disagrees on `chase-ur`'s value, and the shared review date `2026-06-08` is sitting on top of that disagreement.
+
+### Files with one review date for the whole file
+
+Real files often keep one `reviewed` date next to a `programs` array, not a date on every record. `compareMirror` compares records, so copy the file date onto each record first and pass the arrays, not the whole files:
+
+```ts
+const stamp = (file: { reviewed: string; programs: object[] }) =>
+  file.programs.map((p) => ({ ...p, reviewed: file.reviewed }));
+
+const result = compareMirror(stamp(programsFile), stamp(extensionFile), { reviewedField: 'reviewed' });
+// result.stampHidesDrift: [{ id: 'chase-ur', reviewedValue: '2026-06-08', fields: ['baselineCpp'] }]
+```
+
+With the 1.25 versus 1.0 example above, both files say `reviewed: "2026-06-08"` and `chase-ur` differs, so `stampHidesDrift` names it. If you forget the copy, `reviewedField: 'reviewed'` matches no record and the result reports `unknownFields: ['reviewed']` instead of quietly doing nothing. Passing the whole files makes each top-level property a record to read and reports them as `invalid`. The same copy works for `auditReviewStamps` snapshots.
 
 To stop the next hand-typed copy, scan source files and docs for the registered value:
 
@@ -121,10 +136,11 @@ Returns:
 | `changed` | `{ id, field, change, canonical, mirror }`. `change` is `different`, `missing-in-mirror` or `extra-in-mirror`. |
 | `stampHidesDrift` | `{ id, reviewedValue, fields }` when both copies carry the same review date but other fields differ. |
 | `duplicateKeys` | `{ side, id, positions }` for a key used by more than one record on one side. Those records are not compared. |
+| `unknownFields` | Names you selected (`fields`, `reviewedField`) that appear in no readable record on either side. A misspelled name lands here, nothing was compared for it, and the result is never `ok`. |
 | `suspectKeys` | `{ skeleton, keys: [{ side, key }] }` for keys that look alike but are not identical. |
 | `invalid` | Records (or a whole dataset) that could not be read, with a reason. |
 
-`status` is `flagged` when `missing`, `extra`, `changed`, `stampHidesDrift` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `invalid` or `suspectKeys` has anything in it. Otherwise it is `ok`.
+`status` is `flagged` when `missing`, `extra`, `changed`, `stampHidesDrift` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
 
 ### `findHandTypedConstants(text, registry)`
 
@@ -153,15 +169,17 @@ Returns `ok`, `status`, `compared`, and:
 | Field | What it holds |
 | --- | --- |
 | `stampOnly` | `{ id, from, to }`: the review date moved later and no value, source or reviewer changed. |
-| `bulkBump` | `{ date, count, withEvidence, ids }`: more than `bulkThreshold` records moved to the same new UTC day. |
+| `bulkBump` | `{ summary, count, withEvidence, withoutEvidence, date, ids }`: more than `bulkThreshold` records moved to the same new UTC day. Read `summary` first. |
 | `future` | `{ id, value }`: a review date later than `now`. |
 | `backward` | `{ id, from, to }`: a review date moved earlier. |
 | `extendedDeadlines` | `{ id, from, to }`: the expiry moved later and no source field changed. |
 | `unknown` | `{ id, side, field, reason, value? }`: a date that cannot be judged. Never a pass. |
+| `unknownSummary` | `unknown` counted per `{ field, reason, count }`, so thousands of entries can be read at a glance. |
+| `unknownFields` | Configured names (`reviewedField`, `sourceFields`, `reviewerField`, `expiryField`, `valueFields`) that appear in no readable record in either snapshot. A misspelled name lands here and the result is never `ok`. |
 | `added`, `removed` | Keys only in `after` or only in `before`. Informational. |
 | `duplicateKeys`, `suspectKeys`, `invalid` | As in `compareMirror`. |
 
-`status` is `flagged` when `stampOnly`, `bulkBump`, `future`, `backward`, `extendedDeadlines` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `unknown`, `invalid` or `suspectKeys` has anything in it. Otherwise it is `ok`.
+`status` is `flagged` when `stampOnly`, `bulkBump`, `future`, `backward`, `extendedDeadlines` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `unknown`, `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
 
 ## Exact rules
 
@@ -242,11 +260,13 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 
 A field added or removed counts as a change. The expiry field is not evidence: moving a deadline is not a recheck.
 
-**Expiry values.** When `expiryField` is set, every expiry value that is present in `after` must be a usable date (same rules as above), whether or not it moved. A garbage, numeric, zoneless or empty one is `unknown`, even when it is unchanged.
+**Expiry values.** When `expiryField` is set, every expiry value that is present in `after` must be a usable date (same rules as above), whether or not it moved. A garbage, numeric, zoneless, empty or **boolean** one is `unknown` (reasons `unparseable-date`, `not-a-string`, `zoneless-timestamp`, `missing`), even when it is unchanged. A record with no expiry field at all is not reported. A data source that writes `false` for "no deadline" will produce one `unknown` entry per such record: drop or replace those values before the audit (for example `eol: r.eol === false ? undefined : r.eol`), or read `unknownSummary` for the counts.
+
+**Records with no stamp.** A record whose `reviewedField` is absent in `after` is `unknown` with reason `missing`, once per record. That is the honest answer (nothing can be judged for it) and it keeps `ok` false. If a data source stamps only some records, audit only those, or read `unknownSummary` (`{ field, reason, count }`) instead of the full list.
 
 **`stampOnly`:** the stamp moved later and there is no evidence.
 
-**`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong.
+**`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong. Read `summary` first: it says how many of the records also changed a value, source or reviewer (`withEvidence`) and how many did not (`withoutEvidence`, which are also in `stampOnly`). A bump with `withoutEvidence: 0` is an automated but evidenced update, such as a bot refreshing many records at once; it still sets `status` to `flagged`, because a person should confirm the bot's change is real. If you accept that for a source, gate on the part that matters: `audit.stampOnly.length === 0 && audit.bulkBump.every((b) => b.withoutEvidence === 0)`.
 
 **`backward`:** the stamp moved earlier. **`extendedDeadlines`:** the expiry moved later and no source field changed. A removed expiry is `unknown` (`expiry-removed`), and a newly added expiry is not reported.
 
@@ -285,6 +305,7 @@ Reading is iterative over records and bounded by these limits, so a 100,000-leve
 - **It does not prove a human rechecked anything.** It flags stamps that moved with no evidence of a recheck in the data. A stamp that moved alongside a changed value passes, even if the change was cosmetic or made by a script. A reviewer name that changes counts as evidence even if nobody reviewed.
 - **It does not check that a value is true or current.** It checks that copies agree and that dates moved for a visible reason.
 - It does not report a value that changed while its review date did not move. That is a different question.
+- `ignoreFields` names are not checked: an ignored name that matches nothing is harmless, so a typo there fails safe (the field is compared).
 - It does not read files, call APIs, parse CSV or YAML, or schedule anything. You load the data and pass it in.
 - It compares JSON-shaped data. Class instances, `Map`, `Set`, functions and symbols are reported as invalid, not converted.
 - It cannot tell a built-in with a replaced prototype and its own enumerable properties from a plain object (see "What is read").

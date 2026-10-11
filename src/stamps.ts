@@ -1,7 +1,7 @@
 import { formatDay, isFuture, parseStamp, utcDay, type StampProblem } from './dates.js';
 import { ParityError } from './errors.js';
 import { findSuspectKeys } from './keys.js';
-import { duplicatesOf, emptyDatasetInvalid, indexEntries, invalidOf, type Status } from './mirror.js';
+import { duplicatesOf, emptyDatasetInvalid, findUnknownFields, indexEntries, invalidOf, type Status } from './mirror.js';
 import {
   makeBudget,
   optBoolean,
@@ -54,11 +54,15 @@ export interface StampOnly {
  * a script that writes a different timestamp on every record is still caught.
  */
 export interface BulkBump {
-  /** The new UTC calendar day, `YYYY-MM-DD`. */
-  date: string;
+  /** One line to read first, for example `12 records moved to 2026-10-10; 12 of 12 also changed a value, source or reviewer`. */
+  summary: string;
   count: number;
   /** How many of those records also show a changed value, source or reviewer. */
   withEvidence: number;
+  /** How many show no such change (these are also in `stampOnly`). Zero means every record carried a change. */
+  withoutEvidence: number;
+  /** The new UTC calendar day, `YYYY-MM-DD`. */
+  date: string;
   ids: Key[];
 }
 
@@ -94,6 +98,13 @@ export interface UnknownStamp {
   value?: unknown;
 }
 
+/** How many `unknown` entries share a field and a reason (both snapshots together). */
+export interface UnknownSummary {
+  field: string;
+  reason: UnknownReason;
+  count: number;
+}
+
 export interface StampAudit {
   /** True only when nothing at all is reported. */
   ok: boolean;
@@ -107,6 +118,14 @@ export interface StampAudit {
   backward: BackwardStamp[];
   extendedDeadlines: ExtendedDeadline[];
   unknown: UnknownStamp[];
+  /** `unknown` counted per field and reason, so thousands of entries can be read at a glance. */
+  unknownSummary: UnknownSummary[];
+  /**
+   * Configured names (`reviewedField`, `sourceFields`, `reviewerField`, `expiryField`,
+   * `valueFields`) that appear in no readable record in either snapshot, in the order
+   * given. A misspelled name lands here and the result is never `ok`.
+   */
+  unknownFields: string[];
   /** Keys only in the `after` snapshot. Informational. */
   added: Key[];
   /** Keys only in the `before` snapshot. Informational. */
@@ -294,7 +313,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
           const day = utcDay(pa.ms);
           let group = groups.get(day);
           if (group === undefined) {
-            group = { date: formatDay(day), count: 0, withEvidence: 0, ids: [] };
+            group = { summary: '', count: 0, withEvidence: 0, withoutEvidence: 0, date: formatDay(day), ids: [] };
             groups.set(day, group);
           }
           group.count += 1;
@@ -322,6 +341,23 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
   }
 
   const bulkBump = [...groups.values()].filter((g) => g.count > bulkThreshold);
+  for (const group of bulkBump) {
+    group.withoutEvidence = group.count - group.withEvidence;
+    group.summary = `${group.count} records moved to ${group.date}; ${group.withEvidence} of ${group.count} also changed a value, source or reviewer`;
+  }
+  const summaryCounts = new Map<string, UnknownSummary>();
+  for (const item of unknown) {
+    const id = `${item.field}\u0000${item.reason}`;
+    const entry = summaryCounts.get(id);
+    if (entry === undefined) summaryCounts.set(id, { field: item.field, reason: item.reason, count: 1 });
+    else entry.count += 1;
+  }
+  const unknownSummary = [...summaryCounts.values()];
+  const unknownFields = findUnknownFields(
+    [b.entries, a.entries],
+    [...new Set([reviewedField, ...sourceFields, ...(reviewerField === undefined ? [] : [reviewerField]), ...(expiryField === undefined ? [] : [expiryField]), ...(valueFields ?? [])])],
+    key,
+  );
   const suspectKeys = findSuspectKeys(
     [
       { side: 'before', keys: bi.order },
@@ -332,7 +368,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
 
   const flagged =
     stampOnly.length + bulkBump.length + future.length + backward.length + extendedDeadlines.length + duplicateKeys.length > 0;
-  const notJudged = unknown.length + invalid.length + suspectKeys.length > 0;
+  const notJudged = unknown.length + invalid.length + suspectKeys.length + unknownFields.length > 0;
   const status: Status = flagged ? 'flagged' : notJudged ? 'unknown' : 'ok';
   return {
     ok: status === 'ok',
@@ -344,6 +380,8 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     backward,
     extendedDeadlines,
     unknown,
+    unknownSummary,
+    unknownFields,
     added,
     removed,
     duplicateKeys,

@@ -35,6 +35,7 @@ export function emptyMirror(): Omit<MirrorResult, 'compared'> {
     changed: [],
     stampHidesDrift: [],
     duplicateKeys: [],
+    unknownFields: [],
     suspectKeys: [],
     invalid: [],
   }

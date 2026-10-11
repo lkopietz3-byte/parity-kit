@@ -1192,7 +1192,11 @@ describe('compareMirror: explicitly requested key fields, work accounting, and e
   it('a modest number of selected fields still works at the default limits', () => {
     const fields = Array.from({ length: 20 }, (_, i) => `f${i}`)
     const many = Array.from({ length: 5000 }, (_, i) => ({ id: `r${i}`, f1: i }))
-    expect(compareMirror(many, many, { fields }).ok).toBe(true)
+    const r = compareMirror(many, many, { fields })
+    // Nothing differs; the 19 names that no record has are reported as unknown fields.
+    expect(r.changed).toEqual([])
+    expect(r.invalid).toEqual([])
+    expect(r.unknownFields).toHaveLength(19)
   })
 })
 
@@ -1486,7 +1490,8 @@ describe('compareMirror: emptiness is decided from the record, not from the sele
     const record = { id: 'a', get excluded(): number { runs += 1; return 1 } }
     const r = compareMirror([{ id: 'a' }], [record], { fields: ['rate'] })
     expect(runs).toBe(0)
-    expect(r.ok).toBe(true)
+    expect(r.changed).toEqual([])
+    expect(r.unknownFields).toEqual(['rate'])
   })
 
   it('a record with truly nothing in it is still probed (a null-prototype Map as a selected-field record)', () => {
@@ -1498,6 +1503,164 @@ describe('compareMirror: emptiness is decided from the record, not from the sele
 
   it('a record whose only own properties are hidden is still probed', () => {
     const hiddenOnly = Object.defineProperty({}, 'h', { value: 1 })
-    expect(compareMirror({ a: hiddenOnly }, { a: {} }, { fields: ['rate'] }).ok).toBe(true)
+    const r = compareMirror({ a: hiddenOnly }, { a: {} }, { fields: ['rate'] })
+    expect(r.changed).toEqual([])
+    expect(r.invalid).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fix round 6: rows added after the field trial of 8be93f3
+// ---------------------------------------------------------------------------
+
+describe('compareMirror: a selected name that appears in no record is reported, never ok (PK-1)', () => {
+  it('a misspelled selected field is unknown, not ok', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }], { fields: ['vv'] })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.unknownFields).toEqual(['vv'])
+    expect(r.changed).toEqual([])
+  })
+
+  it('a good name beside a misspelled one still compares, and the typo is still reported', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }], { fields: ['vv', 'v'] })
+    expect(r.status).toBe('flagged')
+    expect(r.changed).toHaveLength(1)
+    expect(r.unknownFields).toEqual(['vv'])
+  })
+
+  it('a misspelled reviewedField is reported, and a correct one is not', () => {
+    const records = (v: number): unknown[] => [{ id: 'a', v, seen: '2026-01-01' }]
+    const bad = compareMirror(records(1), records(2), { reviewedField: 'seenn' })
+    expect(bad.unknownFields).toEqual(['seenn'])
+    expect(bad.stampHidesDrift).toEqual([])
+    const good = compareMirror(records(1), records(2), { reviewedField: 'seen' })
+    expect(good.unknownFields).toEqual([])
+    expect(good.stampHidesDrift).toHaveLength(1)
+  })
+
+  it('a name found on only one side, or the key name itself, is not unknown', () => {
+    expect(compareMirror([{ id: 'a' }], [{ id: 'a', v: 1 }], { fields: ['v'] }).unknownFields).toEqual([])
+    expect(compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['id', 'v'] }).unknownFields).toEqual([])
+    expect(compareMirror({ a: { v: 1 } }, { a: { v: 1 } }, { fields: ['id', 'v'] }).unknownFields).toEqual([])
+  })
+
+  it('a name that only unreadable or empty data could hold is still reported when other data was read', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }, null], [{ id: 'a', v: 1 }], { fields: ['v', 'w'] })
+    expect(r.unknownFields).toEqual(['w'])
+  })
+
+  it('nothing is reported when there are no readable records at all', () => {
+    expect(compareMirror([], [], { allowEmpty: true, fields: ['v'], reviewedField: 'seen' }).unknownFields).toEqual([])
+  })
+
+  it('an ignored name that matches nothing is harmless and silent (documented)', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { ignoreFields: ['vv'] })
+    expect(r.ok).toBe(true)
+  })
+
+  it('honest results carry an empty list', () => {
+    expect(compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v'] }).unknownFields).toEqual([])
+  })
+})
+
+describe('auditReviewStamps: configured names that appear in no record are reported (PK-1)', () => {
+  const rows = (reviewedOn: string): unknown[] => [{ id: 'a', source: 's', by: 'p', reviewedOn }]
+  const base = { reviewedField: 'reviewedOn', sourceFields: ['source'] }
+  it('a misspelled reviewedField', () => {
+    const r = audit(rows('2026-01-01'), rows('2026-02-01'), { reviewedField: 'lastRevewed' })
+    expect(r.unknownFields).toContain('lastRevewed')
+    expect(r.ok).toBe(false)
+  })
+  it('a misspelled sourceFields entry, reviewerField, expiryField or valueFields entry', () => {
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, sourceFields: ['sorce'] }).unknownFields).toEqual(['sorce'])
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, reviewerField: 'bye' }).unknownFields).toEqual(['bye'])
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, expiryField: 'expiers' }).unknownFields).toEqual(['expiers'])
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, valueFields: ['vals'] }).unknownFields).toEqual(['vals'])
+  })
+  it('a typo makes the result unknown, never ok', () => {
+    const r = audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, sourceFields: ['sorce'] })
+    expect(r.status).toBe('unknown')
+    expect(r.ok).toBe(false)
+  })
+  it('correct names, and an empty sourceFields, report nothing', () => {
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { ...base, reviewerField: 'by' }).unknownFields).toEqual([])
+    expect(audit(rows('2026-01-01'), rows('2026-01-01'), { reviewedField: 'reviewedOn', sourceFields: [] }).unknownFields).toEqual([])
+  })
+})
+
+describe('auditReviewStamps: non-date expiry values and missing stamps are unknown with a reason, and summarized (PK-3)', () => {
+  const before = [{ id: 'a', d: '2026-01-01', eol: false }, { id: 'b', d: '2026-01-01', eol: '2027-01-01' }, { id: 'c', eol: true }, { id: 'd' }]
+  const r = audit(before, before, { reviewedField: 'd', sourceFields: [], expiryField: 'eol' })
+
+  it('a boolean expiry is not-a-string, per record', () => {
+    expect(r.unknown.filter((u) => u.field === 'eol').map((u) => [u.id, u.reason, u.value])).toEqual([['a', 'not-a-string', false], ['c', 'not-a-string', true]])
+  })
+  it('a record with no stamp is missing', () => {
+    expect(r.unknown.filter((u) => u.field === 'd').map((u) => [u.id, u.reason])).toEqual([['c', 'missing'], ['d', 'missing']])
+  })
+  it('the result carries a summary with counts per field and reason', () => {
+    expect(r.unknownSummary).toEqual([
+      { field: 'eol', reason: 'not-a-string', count: 2 },
+      { field: 'd', reason: 'missing', count: 2 },
+    ])
+    expect(r.status).toBe('unknown')
+  })
+  it('a clean run has an empty summary', () => {
+    expect(audit([{ id: 'a', d: '2026-01-01' }], [{ id: 'a', d: '2026-01-01' }], { reviewedField: 'd', sourceFields: [] }).unknownSummary).toEqual([])
+  })
+})
+
+describe('auditReviewStamps: a bulk bump says up front how many records carried changes (PK-4)', () => {
+  const make = (changed: number, total: number): StampAuditArgs => {
+    const before = Array.from({ length: total }, (_, i) => ({ id: `r${i}`, v: 1, source: 's', d: '2026-01-01' }))
+    const after = before.map((r, i) => ({ ...r, v: i < changed ? 2 : 1, d: '2026-10-10' }))
+    return [before, after]
+  }
+  type StampAuditArgs = [unknown[], unknown[]]
+  const o = { reviewedField: 'd', sourceFields: ['source'] }
+
+  it('every record changed: still flagged, and the counts lead the entry', () => {
+    const [b, a] = make(12, 12)
+    const r = audit(b, a, o)
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toEqual([])
+    expect(r.bulkBump).toHaveLength(1)
+    expect(r.bulkBump[0]).toMatchObject({ count: 12, withEvidence: 12, withoutEvidence: 0 })
+    expect(Object.keys(r.bulkBump[0] as object).slice(0, 4)).toEqual(['summary', 'count', 'withEvidence', 'withoutEvidence'])
+    expect(r.bulkBump[0]?.summary).toBe('12 records moved to 2026-10-10; 12 of 12 also changed a value, source or reviewer')
+  })
+  it('none changed', () => {
+    const [b, a] = make(0, 11)
+    const r = audit(b, a, o)
+    expect(r.bulkBump[0]).toMatchObject({ count: 11, withEvidence: 0, withoutEvidence: 11 })
+    expect(r.bulkBump[0]?.summary).toBe('11 records moved to 2026-10-10; 0 of 11 also changed a value, source or reviewer')
+    expect(r.stampOnly).toHaveLength(11)
+  })
+  it('some changed', () => {
+    const [b, a] = make(4, 12)
+    expect(audit(b, a, o).bulkBump[0]).toMatchObject({ count: 12, withEvidence: 4, withoutEvidence: 8 })
+  })
+})
+
+describe('the file-level review date recipe (PK-2)', () => {
+  const standard = { reviewed: '2026-06-08', programs: [{ id: 'chase-ur', baselineCpp: 1.25 }, { id: 'amex-mr', baselineCpp: 1.2 }] }
+  const extension = { reviewed: '2026-06-08', programs: [{ id: 'chase-ur', baselineCpp: 1.0 }, { id: 'amex-mr', baselineCpp: 1.2 }] }
+  const stamped = (file: { reviewed: string; programs: object[] }): object[] => file.programs.map((p) => ({ ...p, reviewed: file.reviewed }))
+
+  it('copying the file date onto each record turns on stampHidesDrift', () => {
+    const r = compareMirror(stamped(standard), stamped(extension), { reviewedField: 'reviewed' })
+    expect(r.stampHidesDrift).toEqual([{ id: 'chase-ur', reviewedValue: '2026-06-08', fields: ['baselineCpp'] }])
+    expect(r.unknownFields).toEqual([])
+  })
+  it('without the recipe the field is reported as unknown instead of silently doing nothing', () => {
+    const r = compareMirror(standard.programs, extension.programs, { reviewedField: 'reviewed' })
+    expect(r.unknownFields).toEqual(['reviewed'])
+    expect(r.stampHidesDrift).toEqual([])
+  })
+  it('passing the whole files is a bad record each, not a comparison', () => {
+    const r = compareMirror(standard, extension, { allowEmpty: true })
+    expect(r.ok).toBe(false)
+    expect(r.invalid.length).toBeGreaterThan(0)
   })
 })

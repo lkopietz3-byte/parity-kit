@@ -19,6 +19,7 @@ export type {
   StampOptions,
   UnknownReason,
   UnknownStamp,
+  UnknownSummary,
 } from './stamps.js';
 export { ParityError } from './errors.js';
 export type { ParityErrorCode } from './errors.js';

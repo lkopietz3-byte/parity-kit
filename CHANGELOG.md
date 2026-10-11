@@ -102,3 +102,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection. A selected field that exists only in the mirror is now `extra-in-mirror`.
 - An oversized key is refused before any trim or whitespace scan, on the array and id-keyed
   paths, so its cost no longer grows with its length.
+
+### Added and fixed (field-trial round)
+
+- `compareMirror` and `auditReviewStamps` report `unknownFields`: a selected or configured name
+  (`fields`, `reviewedField`, `sourceFields`, `reviewerField`, `expiryField`, `valueFields`) that
+  appears in no readable record. The result is `unknown`, never `ok`, so a misspelled column can
+  no longer turn a gate permanently green.
+- `auditReviewStamps` adds `unknownSummary` (counts per field and reason) and each `bulkBump`
+  entry now leads with `summary`, `count`, `withEvidence` and `withoutEvidence`.
+- README: a recipe for files with one file-level review date, the behavior for boolean or missing
+  expiry values and for records with no stamp, and how to read a bulk bump.
+- Changed rows: three existing rows that selected field names present in no record
+  (`fields: ['rate']`, twenty `f0..f19` names) now report those names as `unknownFields`
+  instead of passing.
