@@ -7,4 +7,5 @@ declare module 'node:vm' {
 declare const process: {
   env: Record<string, string | undefined>
   cpuUsage(previous?: { user: number; system: number }): { user: number; system: number }
+  memoryUsage(): { heapUsed: number }
 }

@@ -1,4 +1,4 @@
-import { ParityError } from './errors.js';
+import { ParityError, isOwnError } from './errors.js';
 import type { Limits } from './types.js';
 
 /** Internal. The counters shared by every read in one call. */
@@ -65,7 +65,7 @@ export function readOptions(
       if (value !== undefined) out[name] = value;
     }
   } catch (error) {
-    if (error instanceof ParityError) throw error;
+    if (isOwnError(error) && error instanceof ParityError) throw error;
     throw new ParityError('bad-options', `${what}: reading the options threw`);
   }
   return out;
@@ -116,7 +116,7 @@ export function optNames(
     }
     return out;
   } catch (error) {
-    if (error instanceof ParityError) throw error;
+    if (isOwnError(error) && error instanceof ParityError) throw error;
     throw new ParityError('bad-options', `${what}: reading option "${name}" threw`);
   }
 }

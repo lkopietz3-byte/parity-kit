@@ -1,4 +1,4 @@
-import { ParityError } from './errors.js';
+import { ParityError, isOwnError } from './errors.js';
 import { describeError } from './snapshot.js';
 import { descriptorValue, isPlainObject, readOwn } from './options.js';
 
@@ -197,7 +197,8 @@ function runFlags(text: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 interface Pattern {
-  entry: number;
+  /** Every constant (by registry index) that lists this exact text. */
+  entries: number[];
   form: string;
 }
 
@@ -311,7 +312,7 @@ function readRegistry(registry: unknown): Entry[] {
     if (!Array.isArray(registry)) return bad('the registry must be an array');
     length = readOwn(registry, 'length');
   } catch (error) {
-    if (error instanceof ParityError) throw error;
+    if (isOwnError(error) && error instanceof ParityError) throw error;
     return bad(`reading the registry threw: ${describeError(error)}`);
   }
   if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 1_000_000) {
@@ -352,7 +353,7 @@ function readRegistry(registry: unknown): Entry[] {
       out.push({ id, value: value, forms });
     }
   } catch (error) {
-    if (error instanceof ParityError) throw error;
+    if (isOwnError(error) && error instanceof ParityError) throw error;
     return bad(`reading the registry threw: ${describeError(error)}`);
   }
   return out;
@@ -379,7 +380,8 @@ interface RawHit {
  * - A string `value` and every entry in `forms` is found as exact text, with
  *   a boundary check on its first and last character.
  * - If a numeric hit and a literal hit for the same constant overlap, the
- *   longer one is kept.
+ *   longer one is kept (the number wins a tie). Literal hits never suppress
+ *   each other.
  *
  * Time is linear in the length of the text for a fixed registry. Throws
  * `ParityError` when `text` is not a string or the registry is malformed.
@@ -390,26 +392,42 @@ export function findHandTypedConstants(text: string, registry: readonly Register
     throw new ParityError('bad-input', 'findHandTypedConstants: text must be a string');
   }
   const entries = readRegistry(registry);
-  const hits: RawHit[] = [];
 
   const byNumber = new Map<number, number[]>();
-  const patterns: Pattern[] = [];
+  // Each distinct text is one pattern, however many times or under however
+  // many constants it is listed, so repeated forms cannot multiply the work.
+  const byForm = new Map<string, number[]>();
+  const addForm = (form: string, entry: number): void => {
+    const list = byForm.get(form);
+    if (list === undefined) byForm.set(form, [entry]);
+    else if (list[list.length - 1] !== entry) list.push(entry);
+  };
   entries.forEach((entry, index) => {
     if (typeof entry.value === 'number') {
       const list = byNumber.get(entry.value);
       if (list === undefined) byNumber.set(entry.value, [index]);
       else list.push(index);
     } else {
-      patterns.push({ entry: index, form: entry.value });
+      addForm(entry.value, index);
     }
-    for (const form of entry.forms) patterns.push({ entry: index, form });
+    for (const form of entry.forms) addForm(form, index);
   });
+  const patterns: Pattern[] = [];
+  for (const [form, owners] of byForm) patterns.push({ entries: [...new Set(owners)], form });
+
+  const numberHits = new Map<number, RawHit[]>();
+  const literalHits = new Map<number, RawHit[]>();
+  const push = (into: Map<number, RawHit[]>, hit: RawHit): void => {
+    const list = into.get(hit.entry);
+    if (list === undefined) into.set(hit.entry, [hit]);
+    else list.push(hit);
+  };
 
   if (byNumber.size > 0) {
     for (const token of numberTokens(text)) {
       const list = byNumber.get(token.value);
       if (list === undefined) continue;
-      for (const entry of list) hits.push({ entry, start: token.start, end: token.end, kind: 'number' });
+      for (const entry of list) push(numberHits, { entry, start: token.start, end: token.end, kind: 'number' });
     }
   }
   if (patterns.length > 0) {
@@ -417,32 +435,46 @@ export function findHandTypedConstants(text: string, registry: readonly Register
     new Automaton(patterns).scan(text, (p, end) => {
       const pattern = patterns[p] as Pattern;
       const start = end - pattern.form.length;
-      if (literalBoundariesOk(text, start, end, flags)) hits.push({ entry: pattern.entry, start, end, kind: 'form' });
+      if (!literalBoundariesOk(text, start, end, flags)) return;
+      for (const entry of pattern.entries) push(literalHits, { entry, start, end, kind: 'form' });
     });
   }
 
-  // Per constant, drop exact repeats and keep the longer of two overlapping hits.
-  const perEntry = new Map<number, RawHit[]>();
-  for (const hit of hits) {
-    const list = perEntry.get(hit.entry);
-    if (list === undefined) perEntry.set(hit.entry, [hit]);
-    else list.push(hit);
-  }
+  // Overlaps are only resolved between a number hit and a literal hit of the
+  // same constant: the longer one is kept, and the number wins a tie. Literal
+  // hits never suppress each other, and each text is one pattern, so there
+  // are no repeats to remove.
   const kept: RawHit[] = [];
-  for (const list of perEntry.values()) {
-    list.sort((a, b) => a.start - b.start || b.end - a.end);
-    const result: RawHit[] = [];
-    for (const hit of list) {
-      const last = result[result.length - 1];
-      if (last !== undefined && hit.start < last.end) {
-        if (hit.end - hit.start > last.end - last.start) result[result.length - 1] = hit;
-        continue;
-      }
-      result.push(hit);
+  for (const [entry, literals] of literalHits) {
+    const numbers = numberHits.get(entry);
+    if (numbers === undefined) {
+      for (const hit of literals) kept.push(hit);
+      continue;
     }
-    for (const hit of result) kept.push(hit);
+    const droppedLiterals = new Set<RawHit>();
+    const droppedNumbers = new Set<RawHit>();
+    for (const literal of literals) {
+      // First number hit that ends after this literal starts (number hits are disjoint and sorted).
+      let lo = 0;
+      let hi = numbers.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if ((numbers[mid] as RawHit).end > literal.start) hi = mid;
+        else lo = mid + 1;
+      }
+      for (let k = lo; k < numbers.length && (numbers[k] as RawHit).start < literal.end; k += 1) {
+        const number = numbers[k] as RawHit;
+        if (number.end - number.start >= literal.end - literal.start) droppedLiterals.add(literal);
+        else droppedNumbers.add(number);
+      }
+    }
+    for (const hit of literals) if (!droppedLiterals.has(hit)) kept.push(hit);
+    for (const hit of numbers) if (!droppedNumbers.has(hit)) kept.push(hit);
   }
-  kept.sort((a, b) => a.start - b.start || a.entry - b.entry);
+  for (const [entry, numbers] of numberHits) {
+    if (!literalHits.has(entry)) for (const hit of numbers) kept.push(hit);
+  }
+  kept.sort((a, b) => a.start - b.start || a.entry - b.entry || b.end - a.end);
 
   // Line and column in one pass over the text.
   const out: HandTypedMatch[] = [];

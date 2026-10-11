@@ -371,3 +371,80 @@ describe('a Proxy descriptor trap is consulted once per property', () => {
     for (const n of calls.values()) expect(n).toBe(1)
   })
 })
+
+describe('caller-controlled hooks are never run to classify a value', () => {
+  it('an inherited Symbol.toStringTag getter is never run, so it cannot change a record', () => {
+    let runs = 0
+    const proto = Object.create(null, {
+      [Symbol.toStringTag]: { get(this: { x: number }) { runs += 1; this.x = 2; return 'Object' } },
+    }) as object
+    const v = Object.assign(Object.create(proto) as object, { x: 1 })
+    const r = auditReviewStamps(
+      [{ id: 'a', r: '2026-01-01', v: { x: 1 } }],
+      [{ id: 'a', r: '2026-02-01', v }],
+      { reviewedField: 'r', sourceFields: [] },
+    )
+    expect(runs).toBe(0)
+    expect(r.stampOnly).toHaveLength(1)
+    expect(r.ok).toBe(false)
+  })
+
+  it('the same getter cannot hide drift in compareMirror', () => {
+    let runs = 0
+    const proto = Object.create(null, {
+      [Symbol.toStringTag]: { get(this: { x: number }) { runs += 1; this.x = 2; return 'Object' } },
+    }) as object
+    const v = Object.assign(Object.create(proto) as object, { x: 1 })
+    const r = compareMirror([{ id: 'a', v: { x: 2 } }], [{ id: 'a', v }])
+    expect(runs).toBe(0)
+    expect(r.changed).toHaveLength(1)
+  })
+
+  it('a Proxy get trap is never used to classify a value', () => {
+    let gets = 0
+    const p = new Proxy({ x: 1 }, { get(t, k): unknown { gets += 1; return Reflect.get(t, k) as unknown } })
+    compareMirror([{ id: 'a', v: p }], [{ id: 'a', v: { x: 1 } }])
+    expect(gets).toBe(0)
+  })
+})
+
+describe('thrown values are never inspected or coerced', () => {
+  it('a getter that throws a Proxy whose getPrototypeOf throws makes only that record invalid', () => {
+    const evil = new Proxy({}, { getPrototypeOf() { throw new Error('trap') } })
+    const hostile = { id: 'a', get v(): number { throw evil as Error } }
+    const r = compareMirror([hostile, { id: 'b', v: 1 }], [{ id: 'a', v: 1 }, { id: 'b', v: 2 }])
+    expect(r.invalid).toMatchObject([{ side: 'canonical', id: 'a', reason: 'unreadable' }])
+    expect(r.changed).toMatchObject([{ id: 'b' }])
+    expect(r.missing).toEqual([])
+  })
+
+  it('no toString, valueOf, message getter or Symbol.toPrimitive on a thrown value is run', () => {
+    let hooks = 0
+    const thrown = {
+      toString() { hooks += 1; return 'x' },
+      valueOf() { hooks += 1; return 1 },
+      get message(): string { hooks += 1; return 'm' },
+      get [Symbol.toPrimitive](): () => string { hooks += 1; return () => 'p' },
+    }
+    const r = compareMirror([{ id: 'a', get v(): number { throw thrown as unknown as Error } }], [{ id: 'a', v: 1 }])
+    expect(r.invalid[0]?.reason).toBe('unreadable')
+    expect(hooks).toBe(0)
+  })
+
+  it('a thrown real Error still reports its message', () => {
+    const r = compareMirror([{ id: 'a', get v(): number { throw new Error('boom') } }], [{ id: 'a', v: 1 }])
+    expect(r.invalid[0]?.detail).toContain('boom')
+  })
+
+  it('a throwing prototype lookup inside a dataset argument is a documented error for that argument', () => {
+    const evil = new Proxy({}, { getPrototypeOf() { throw new Error('trap') } })
+    const p = new Proxy([], { get() { throw evil as Error }, getOwnPropertyDescriptor() { throw evil as Error } })
+    expect(() => compareMirror(p, [])).toThrowError(expect.objectContaining({ code: 'unreadable-input' }) as Error)
+  })
+
+  it('a throwing options getter with a hostile thrown value is a bad-options error', () => {
+    const evil = new Proxy({}, { getPrototypeOf() { throw new Error('trap') } })
+    const options = { get key(): string { throw evil as Error } }
+    expect(() => compareMirror([], [], options)).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+})

@@ -173,7 +173,9 @@ Returns `ok`, `status`, `compared`, and:
 - A **getter** is run once per read. A getter or Proxy trap that throws makes that record `invalid` with reason `unreadable`; the other records are still compared.
 - An object property whose value is `undefined` is treated as absent, the way JSON treats it.
 - Values may be strings, finite or non-finite numbers, booleans, bigints, `null`, `Date`s, arrays and plain objects, nested. A function, symbol, class instance, `Map`, typed array or other exotic object inside a record makes the record `invalid` with reason `unsupported-value`. A cycle is `cycle`. Nesting deeper than `maxDepth` is `too-deep`.
-- A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not.
+- A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not. Built-ins are recognized the same way, by calling a captured built-in method that only succeeds on a real instance, never by reading `Symbol.toStringTag`, `constructor` or the prototype. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` is reported as `unsupported-value` even when its prototype was replaced with `null` or `Object.prototype`. For speed this check runs on an object that has no enumerable own properties, or has a non-enumerable own property, or whose prototype is not plain, and always for typed arrays. A built-in whose prototype was replaced **and** that was given its own enumerable properties is read as the plain object those properties make.
+- Reading a value never runs a getter on a prototype and never reads a property to classify it. The only caller code that can run is an own getter (once), a Proxy trap, and, for a real `Promise`, the `constructor` lookup that `then` performs.
+- A key field is left out of the compared fields unless you ask for it: name it in `fields`, or use it as `reviewedField`. Then it is read like any other field.
 - Results never alias your input. Reported values are copies (objects have a `null` prototype).
 
 ### How values are compared
@@ -208,7 +210,7 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 - A **string** `value`, and every entry in `forms`, is found as exact, case-sensitive text, and shares the number boundary rules above. A match may not begin or end strictly inside a number: `250` is not found in `1,250`, `8` and `1e` are not found in `1e+8`, `1.25` is found in `1.25,0.5`. A form that starts or ends with a digit must start or end exactly where a number starts or ends, with no letter, digit, underscore or non-ASCII decimal digit glued on (`v1.25`, `1.25_x` and `1.25６` are not hits). A form that starts or ends with anything else only has to not touch another letter, digit or underscore.
 - **Commas.** A comma followed by exactly three digits (and then a non-digit) continues a number as a thousands separator, so `1,250` is one number, 1250, and `1,250,5` is 1250 and 5. Any other comma ends the number, so `1,25` is 1 and 25, `1.25,0.5` is 1.25 and 0.5, and `12,34,567` is 12 and 34567. A list written like `1,250` is therefore read as one number; write a space after the comma.
 - A non-ASCII decimal digit (full-width, Arabic-Indic, Devanagari and so on) next to a number makes it part of a longer number, so nothing is found. Only ASCII digits spell a number.
-- If a numeric hit and a literal hit for the same constant overlap, the longer one is kept.
+- If a number hit and a literal hit for the same constant overlap, the longer one is kept, and the number wins a tie. Nothing else is suppressed: two overlapping literal hits (`foo-bar` and `bar-baz` in `foo-bar-baz`) are both reported. The same text listed more than once, for one constant or several, is one pattern, so repeating it adds no work; each constant that lists it still gets its hit.
 - Scanning is linear in the length of the text for a fixed registry (an Aho-Corasick automaton for literal forms, one pass for numbers). Sorting the matches adds a log factor in the number of matches. Many heavily overlapping forms multiply the number of raw hits by the registry size.
 - Tiny integers are noisy. A registered `8` matches every standalone `8`. Prefer a `forms` entry with context such as `"8 points"`.
 - Registry mistakes throw `ParityError` with code `bad-registry`: duplicate ids, an empty id or form, a non-finite number, a value that is not a number or non-empty string, a hole in the array.
@@ -236,6 +238,8 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 - the reviewer field.
 
 A field added or removed counts as a change. The expiry field is not evidence: moving a deadline is not a recheck.
+
+**Expiry values.** When `expiryField` is set, every expiry value that is present in `after` must be a usable date (same rules as above), whether or not it moved. A garbage, numeric, zoneless or empty one is `unknown`, even when it is unchanged.
 
 **`stampOnly`:** the stamp moved later and there is no evidence.
 
@@ -266,7 +270,7 @@ Limits (`limits: { maxRecords, maxNodes, maxDepth }`):
 | Limit | Default | Meaning |
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. |
-| `maxNodes` | 10,000,000 | Most values read in one call. Arrays and objects are capped at a fifth of this. |
+| `maxNodes` | 10,000,000 | Most values read in one call, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this. |
 | `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
 Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. Comparison itself never recurses deeper than `maxDepth`.
@@ -279,8 +283,8 @@ Reading is iterative over records and bounded by these limits, so a 100,000-leve
 - It does not report a value that changed while its review date did not move. That is a different question.
 - It does not read files, call APIs, parse CSV or YAML, or schedule anything. You load the data and pass it in.
 - It compares JSON-shaped data. Class instances, `Map`, `Set`, functions and symbols are reported as invalid, not converted.
+- It cannot tell a built-in with a replaced prototype and its own enumerable properties from a plain object (see "What is read").
 - Look-alike key detection uses a short list of letters and the Unicode normalization built into your runtime. It will not catch every homoglyph.
-- A `Date` whose `Symbol.toStringTag` has been overwritten is not recognized as a Date and is reported as an unsupported value.
 - It makes no legal, regulatory or compliance claim. It is a data check.
 
 ## Using it in CI

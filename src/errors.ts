@@ -11,6 +11,24 @@ export type ParityErrorCode =
   | 'too-large' // a size limit was exceeded (records, total values)
   | 'bad-registry'; // a registry entry is malformed
 
+/**
+ * Every error this package throws on purpose is registered here. Caller code
+ * can throw anything (including a Proxy whose prototype lookup throws), so
+ * `catch` blocks recognize our own errors by identity in this set, never by
+ * `instanceof`, which would run the thrown value's traps.
+ */
+const ours = new WeakSet<object>();
+
+/** True only for an error object created by this package. Never runs code on `value`. */
+export function isOwnError(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && ours.has(value);
+}
+
+/** Internal. Mark an error object as created by this package. */
+export function registerOwnError(error: object): void {
+  ours.add(error);
+}
+
 export class ParityError extends Error {
   readonly code: ParityErrorCode;
 
@@ -18,5 +36,6 @@ export class ParityError extends Error {
     super(message);
     this.name = 'ParityError';
     this.code = code;
+    registerOwnError(this);
   }
 }

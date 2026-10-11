@@ -36,11 +36,20 @@ imports a `node:` module, so it is browser-safe.
   `toJSON`, `then`, `toString` and `valueOf` are not used. What was validated
   is what is compared and reported.
 - **Plain data only.** Records and nested objects must be plain (prototype
-  `null`, or a prototype whose prototype is `null`, from any realm). Dates are
-  recognized by brand (`Date.prototype.getTime` called with the value as
-  receiver), after a cheap `Object.prototype.toString` check so ordinary
-  objects do not pay for a thrown exception. A function, symbol, class
-  instance, `Map` or typed array makes the record invalid.
+  `null`, or a prototype whose prototype is `null`, from any realm). Nothing
+  is classified by a property the caller controls: no `Symbol.toStringTag`,
+  `constructor`, `toJSON` or inherited getter is read. Built-ins are
+  recognized by calling captured built-in methods that only succeed on a real
+  instance (`src/brand.ts`); that includes Dates (`Date.prototype.getTime`),
+  which become date values. A failed probe throws internally and is slow, so
+  the sweep runs only for an object with no enumerable own properties, a
+  non-enumerable own property, or a non-plain prototype, and typed arrays are
+  always caught by `ArrayBuffer.isView`. The documented gap: a built-in with a
+  replaced prototype and its own enumerable properties reads as a plain object.
+- **Our errors are recognized by identity.** Caller code can throw anything.
+  `catch` blocks test `isOwnError(value)` (a `WeakSet` membership check, which
+  runs no traps) before any `instanceof`, and thrown values are never coerced:
+  `describeError` reads only an own data property `message` that is a string.
 - **Bounded work.** `maxRecords`, `maxNodes` (and a lower cap on arrays and
   objects, which allocate) and `maxDepth` (at most 1000) bound every read.
   Recursion happens only after the depth check, so stack use is bounded.

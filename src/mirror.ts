@@ -186,7 +186,7 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     names = [...fields];
     if (reviewedField !== undefined && !names.includes(reviewedField)) names.push(reviewedField);
   }
-  const cfg = { key, names };
+  const cfg = { key, names, includeKey: reviewedField === key || (fields?.includes(key) ?? false) };
   const c = readDataset(canonical, 'canonical', cfg, budget);
   const m = readDataset(mirror, 'mirror', cfg, budget);
   const ci = indexEntries(c.entries);

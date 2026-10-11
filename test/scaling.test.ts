@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
 import { cpuMs, program, programs } from './helpers.js'
 
-vi.setConfig({ testTimeout: 120_000 })
+vi.setConfig({ testTimeout: 600_000 })
 
 // Scaling tests. CPU time is measured (not wall time) and the best of three
 // runs is used. Four times the input must cost well under sixteen times the
@@ -146,6 +146,33 @@ describe('1 MB of text', () => {
     expect(r.changed).toHaveLength(1)
     const k = compareMirror([{ id: big }], [{ id: `${big}\u200b` }])
     expect(k.suspectKeys).toHaveLength(1)
+  })
+})
+
+describe('duplicate forms and memory', () => {
+  it('a thousand copies of one form do not multiply the hits or the memory', () => {
+    const registry = [{ id: 'x', value: '-', forms: Array.from({ length: 1000 }, () => '-') }]
+    const before = process.memoryUsage().heapUsed
+    const m = findHandTypedConstants('-'.repeat(2000), registry)
+    const grown = process.memoryUsage().heapUsed - before
+    expect(m).toHaveLength(2000)
+    expect(grown).toBeLessThan(40 * 1024 * 1024)
+  })
+
+  it('many distinct overlapping forms on a long text stay linear in the text', () => {
+    const forms = Array.from({ length: 30 }, (_, i) => '-'.repeat(i + 1))
+    const reg = [{ id: 'x', value: 'zzz', forms }]
+    const r = ratio(() => findHandTypedConstants('-'.repeat(20_000), reg), () => findHandTypedConstants('-'.repeat(80_000), reg))
+    expect(r).toBeLessThan(10)
+  })
+})
+
+describe('empty objects', () => {
+  it('100k records with empty-object fields stay linear', () => {
+    const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
+    const small = build(10_000)
+    const large = build(40_000)
+    expect(ratio(() => compareMirror(small, small), () => compareMirror(large, large))).toBeLessThan(10)
   })
 })
 

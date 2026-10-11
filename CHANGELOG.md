@@ -45,3 +45,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so it is reported `invalid` and is never reported as `missing`.
 - `maxDepth` is inclusive: a container directly in a field is level 1.
 - A revoked or otherwise hostile options object throws `ParityError('bad-options')`.
+
+### Fixed (review round 1, batch 2)
+
+- Values are no longer classified through `Object.prototype.toString`, so an inherited
+  `Symbol.toStringTag` getter (or a Proxy `get` trap) cannot run and change a record before
+  it is read. Built-ins are recognized by internal-slot probes (`Date`, `Map`, `Set`, `RegExp`,
+  `ArrayBuffer`, typed arrays, `Promise`, `WeakMap`, boxed primitives, `Error`), so a built-in
+  whose prototype was replaced with `null` or `Object.prototype` is an unsupported value, and a
+  null-prototype Date is a Date.
+- `auditReviewStamps` now validates every present expiry value in `after`, moved or not; an
+  unchanged garbage, numeric or zoneless expiry is `unknown`.
+- Duplicate forms are one pattern each, so repeating a form no longer multiplies candidate
+  storage (a thousand copies of one form used about 200 MiB; now a few hundred KiB).
+- Overlap suppression in `findHandTypedConstants` is limited to a number hit against a literal
+  hit of the same constant. Two overlapping literal hits are both reported.
+- A key field named in `fields`, or used as `reviewedField`, is now read and compared.
+- Every probe for a named field counts against `maxNodes`, present or absent, so a long `fields`
+  list ends in `too-large` instead of an unbounded loop.
+- Our own errors are recognized by identity, and thrown values are never inspected or coerced:
+  a Proxy thrown from a getter now marks only that record `invalid`.

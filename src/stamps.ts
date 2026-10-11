@@ -206,7 +206,13 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     if (expiryField !== undefined) set.add(expiryField);
     names = [...set];
   }
-  const cfg = { key, names };
+  const includeKey =
+    key === reviewedField ||
+    key === expiryField ||
+    key === reviewerField ||
+    sourceNames.has(key) ||
+    (valueFields?.includes(key) ?? false);
+  const cfg = { key, names, includeKey };
   const b = readDataset(before, 'before', cfg, budget);
   const a = readDataset(after, 'after', cfg, budget);
   const bi = indexEntries(b.entries);
@@ -253,6 +259,13 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     if (!pa.ok) markUnknown(id, 'after', reviewedField, pa.reason, afterValue);
     else if (nowMs !== undefined && isFuture(pa, nowMs)) future.push({ id, value: stampText(afterValue) });
 
+    // Every expiry value that is present must be a usable date, whether or not it moved.
+    const expiryAfter = expiryField === undefined ? undefined : af.get(expiryField);
+    const parsedExpiryAfter = expiryAfter === undefined ? undefined : parseStamp(expiryAfter);
+    if (parsedExpiryAfter !== undefined && !parsedExpiryAfter.ok) {
+      markUnknown(id, 'after', expiryField as string, parsedExpiryAfter.reason, expiryAfter);
+    }
+
     if (bf === undefined) continue;
     compared += 1;
 
@@ -296,16 +309,13 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     // Did the deadline move?
     if (expiryField !== undefined) {
       const eb = bf.get(expiryField);
-      const ea = af.get(expiryField);
-      if (eb !== undefined && ea === undefined) {
+      if (eb !== undefined && expiryAfter === undefined) {
         markUnknown(id, 'after', expiryField, 'expiry-removed', eb);
-      } else if (eb !== undefined && ea !== undefined && !snapEqual(eb, ea, 0)) {
+      } else if (eb !== undefined && expiryAfter !== undefined && !snapEqual(eb, expiryAfter, 0)) {
         const xb = parseStamp(eb);
-        const xa = parseStamp(ea);
         if (!xb.ok) markUnknown(id, 'before', expiryField, xb.reason, eb);
-        if (!xa.ok) markUnknown(id, 'after', expiryField, xa.reason, ea);
-        if (xb.ok && xa.ok && xa.ms > xb.ms && !sourceChanged) {
-          extendedDeadlines.push({ id, from: stampText(eb), to: stampText(ea) });
+        if (xb.ok && parsedExpiryAfter?.ok === true && parsedExpiryAfter.ms > xb.ms && !sourceChanged) {
+          extendedDeadlines.push({ id, from: stampText(eb), to: stampText(expiryAfter) });
         }
       }
     }

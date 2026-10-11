@@ -1123,3 +1123,167 @@ describe('compareMirror: a record keeps its identity when its prototype cannot b
     expect(r.invalid).toMatchObject([{ id: 'a', reason: 'not-a-plain-object' }])
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fix round 1, batch 2
+// ---------------------------------------------------------------------------
+
+describe('findHandTypedConstants: duplicates and overlaps', () => {
+  const texts = (text: string, registry: Parameters<typeof findHandTypedConstants>[1]): string[] =>
+    findHandTypedConstants(text, registry).map((m) => `${m.id}@${m.index}:${m.text}`)
+
+  it('two overlapping literal hits for the same constant are both reported', () => {
+    expect(texts('foo-bar-baz', [{ id: 'x', value: 'foo-bar', forms: ['bar-baz'] }])).toEqual(['x@0:foo-bar', 'x@4:bar-baz'])
+  })
+
+  it('nested literal forms of one constant are all reported', () => {
+    expect(texts('ab abc', [{ id: 'x', value: 'ab', forms: ['abc', 'ab abc'] }])).toEqual(['x@0:ab abc', 'x@0:ab', 'x@3:abc'])
+  })
+
+  it('a repeated form is reported once per place', () => {
+    expect(texts('--', [{ id: 'x', value: '-', forms: ['-', '-', '-'] }])).toEqual(['x@0:-', 'x@1:-'])
+  })
+
+  it('the same value under two ids is still reported for each id', () => {
+    expect(texts('ab', [{ id: 'x', value: 'ab' }, { id: 'y', value: 'ab', forms: ['ab'] }])).toEqual(['x@0:ab', 'y@0:ab'])
+  })
+
+  it('a number hit inside a longer literal hit of the same constant still collapses to the literal', () => {
+    expect(texts('worth 1.25 cents', [{ id: 'x', value: 1.25, forms: ['1.25 cents'] }])).toEqual(['x@6:1.25 cents'])
+  })
+
+  it('a literal form that would end inside a longer number is not a hit; the number is', () => {
+    expect(texts('x 1.250 y', [{ id: 'x', value: 1.25, forms: ['1.25'] }])).toEqual(['x@2:1.250'])
+  })
+
+  it('a literal hit and a number hit of the same range are reported once, as a number', () => {
+    const m = findHandTypedConstants('1.25', [{ id: 'x', value: 1.25, forms: ['1.25'] }])
+    expect(m.map((h) => h.kind)).toEqual(['number'])
+  })
+})
+
+describe('compareMirror: explicitly requested key fields, work accounting, and expiry', () => {
+  it('fields: ["id"] compares the id field when the records carry it', () => {
+    const r = compareMirror({ a: {} }, { a: { id: 'a' } }, { fields: ['id'] })
+    expect(r.ok).toBe(false)
+    expect(r.changed).toEqual([{ id: 'a', field: 'id', change: 'extra-in-mirror', canonical: undefined, mirror: 'a' }])
+  })
+
+  it('without an explicit request the key field is still left out', () => {
+    expect(compareMirror({ a: {} }, { a: { id: 'a' } }).ok).toBe(true)
+  })
+
+  it('a reviewedField that is the key field can be read', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }], { reviewedField: 'id' })
+    expect(r.stampHidesDrift).toMatchObject([{ id: 'a', reviewedValue: 'a', fields: ['v'] }])
+  })
+
+  it('every selected-field probe is charged, present or absent', () => {
+    const fields = Array.from({ length: 1000 }, (_, i) => `f${i}`)
+    expect(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { fields, limits: { maxNodes: 2 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+    const many = Array.from({ length: 2000 }, (_, i) => ({ id: `r${i}` }))
+    expect(() => compareMirror(many, many, { fields, limits: { maxNodes: 100_000 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+
+  it('a modest number of selected fields still works at the default limits', () => {
+    const fields = Array.from({ length: 20 }, (_, i) => `f${i}`)
+    const many = Array.from({ length: 5000 }, (_, i) => ({ id: `r${i}`, f1: i }))
+    expect(compareMirror(many, many, { fields }).ok).toBe(true)
+  })
+})
+
+describe('auditReviewStamps: every present expiry value is checked, moved or not', () => {
+  const o = { expiryField: 'expires' }
+  const bad: Array<[string, unknown, string]> = [
+    ['a garbage string', 'garbage', 'unparseable-date'],
+    ['a number', 20261201, 'not-a-string'],
+    ['a zoneless timestamp', '2026-12-01T00:00:00', 'zoneless-timestamp'],
+    ['an empty string', '', 'missing'],
+    ['null', null, 'missing'],
+    ['an impossible date', '2026-02-30', 'unparseable-date'],
+  ]
+  it.each(bad)('an unchanged %s expiry is unknown', (_name, expires, reason) => {
+    const r = audit([rec('a', { expires })], [rec('a', { expires })], o)
+    expect(r.ok).toBe(false)
+    expect(r.unknown).toMatchObject([{ id: 'a', side: 'after', field: 'expires', reason }])
+    expect(r.extendedDeadlines).toEqual([])
+  })
+
+  it('a new record with a bad expiry is unknown', () => {
+    const r = audit([rec('a')], [rec('a'), rec('b', { expires: 'soon' })], o)
+    expect(r.unknown).toMatchObject([{ id: 'b', side: 'after', field: 'expires', reason: 'unparseable-date' }])
+  })
+
+  it('a bad expiry is reported once when it also moved', () => {
+    const r = audit([rec('a', { expires: '2026-12-01' })], [rec('a', { expires: 'soon' })], o)
+    expect(r.unknown.filter((u) => u.side === 'after')).toHaveLength(1)
+  })
+
+  it('a valid unchanged expiry stays ok', () => {
+    expect(audit([rec('a', { expires: '2026-12-01' })], [rec('a', { expires: '2026-12-01' })], o).ok).toBe(true)
+  })
+})
+
+describe('compareMirror: native objects whose prototype was replaced', () => {
+  const swapped = (value: object, proto: object | null): object => Object.setPrototypeOf(value, proto) as object
+  const natives: Array<[string, () => object]> = [
+    ['a Map', () => new Map([[1, 2]])],
+    ['a Set', () => new Set([1])],
+    ['a RegExp', () => /x/u],
+    ['an ArrayBuffer', () => new ArrayBuffer(4)],
+    ['a Uint8Array', () => new Uint8Array([1])],
+    ['a DataView', () => new DataView(new ArrayBuffer(2))],
+    ['a WeakMap', () => new WeakMap()],
+    ['a WeakSet', () => new WeakSet()],
+    ['a Promise', () => Promise.resolve(1)],
+    ['a boxed Number', () => Object(5) as object],
+    ['a boxed String', () => Object('s') as object],
+    ['a boxed Boolean', () => Object(true) as object],
+    ['a boxed BigInt', () => Object(5n) as object],
+    ['an Error', () => new Error('e')],
+    ['a WeakRef', () => new WeakRef({})],
+  ]
+  for (const [name, make] of natives) {
+    it(`${name} with a null prototype is an unsupported value`, () => {
+      const r = compareMirror([{ id: 'a', v: swapped(make(), null) }], [{ id: 'a', v: {} }])
+      expect(r.ok).toBe(false)
+      expect(r.invalid.map((i) => i.reason)).toEqual(['unsupported-value'])
+    })
+    it(`${name} given Object.prototype is an unsupported value`, () => {
+      const r = compareMirror([{ id: 'a', v: swapped(make(), Object.prototype) }], [{ id: 'a', v: {} }])
+      expect(r.invalid.map((i) => i.reason)).toEqual(['unsupported-value'])
+    })
+    it(`${name} as an id-keyed record is not a plain record`, () => {
+      const r = compareMirror({ a: swapped(make(), null) }, { a: {} })
+      expect(r.ok).toBe(false)
+      expect(r.invalid[0]?.reason).toBe('not-a-plain-object')
+    })
+  }
+
+  it('a null-prototype Date is a date by brand: equal to the same time, different from {}', () => {
+    const mk = (t: number): object => swapped(new Date(t), null)
+    expect(compareMirror([{ id: 'a', v: mk(0) }], [{ id: 'a', v: new Date(0) }]).ok).toBe(true)
+    expect(compareMirror([{ id: 'a', v: mk(0) }], [{ id: 'a', v: mk(1) }]).ok).toBe(false)
+    expect(compareMirror({ a: mk(0) }, { a: {} }).ok).toBe(false)
+    expect(compareMirror([{ id: 'a', v: mk(0) }], [{ id: 'a', v: {} }]).ok).toBe(false)
+  })
+
+  it('two null-prototype Maps with different entries do not compare equal as empty objects', () => {
+    const a = swapped(new Map([[1, 'x']]), null)
+    const b = swapped(new Map([[1, 'y']]), null)
+    expect(compareMirror([{ id: 'k', v: a }], [{ id: 'k', v: b }]).ok).toBe(false)
+  })
+
+  it('ordinary empty objects, null-prototype or not, are still equal', () => {
+    expect(compareMirror([{ id: 'k', v: {}, w: Object.create(null) as object }], [{ id: 'k', v: Object.create(null) as object, w: {} }]).ok).toBe(true)
+  })
+
+  it('a real Promise is not touched in a way that leaves it unhandled', () => {
+    const p = Promise.reject(new Error('later'))
+    compareMirror([{ id: 'a', v: swapped(p, null) }], [{ id: 'a', v: {} }])
+  })
+})

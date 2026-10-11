@@ -1,4 +1,5 @@
-import { ParityError } from './errors.js';
+import { emptyObjectKind, isBufferView, nativeKind } from './brand.js';
+import { ParityError, isOwnError, registerOwnError } from './errors.js';
 import { descriptorValue, isPlainObject, readOwn, type Budget } from './options.js';
 import type { InvalidReason, Key } from './types.js';
 
@@ -43,16 +44,19 @@ export class Unsupported extends Error {
     this.reason = reason;
     this.path = path;
     this.detail = detail;
+    registerOwnError(this);
   }
 }
 
 /** Internal. A size limit was hit; this aborts the whole call. */
-export class BudgetExceeded extends Error {}
+export class BudgetExceeded extends Error {
+  constructor(message: string) {
+    super(message);
+    registerOwnError(this);
+  }
+}
 
 const dateGetTime = Reflect.get(Date.prototype, 'getTime');
-
-// eslint-disable-next-line @typescript-eslint/unbound-method -- captured once; always called with a receiver
-const objectToString: (this: unknown) => string = Object.prototype.toString;
 
 /** The time value of a Date from any realm, or undefined for anything that is not a real Date. */
 export function dateTime(value: object): number | undefined {
@@ -64,29 +68,23 @@ export function dateTime(value: object): number | undefined {
 }
 
 /**
- * Like `dateTime`, but cheap for the common case. A failed brand check throws,
- * and building that exception costs microseconds, so an object is only
- * brand-checked when its string tag says it might be a Date. A Date whose
- * tag has been overwritten is therefore not recognized, and is reported as an
- * unsupported value.
+ * A short description of a thrown value that never runs code on it: it reads
+ * only an own data property `message` that holds a string (which is what a
+ * real Error has), and otherwise says that a value was thrown. No
+ * `instanceof`, no coercion, no getters.
  */
-function dateTimeOf(value: object): number | undefined {
-  try {
-    if (Reflect.apply(objectToString, value, []) !== '[object Date]') return undefined;
-  } catch {
-    return undefined;
-  }
-  return dateTime(value);
-}
-
-/** Never throws, even for a hostile error object. */
 export function describeError(error: unknown): string {
   try {
-    if (error instanceof Error) return String(error.message).slice(0, 200);
-    return String(error).slice(0, 200);
+    if (typeof error === 'object' && error !== null) {
+      const desc = Reflect.getOwnPropertyDescriptor(error, 'message');
+      if (desc !== undefined && typeof desc.value === 'string') return desc.value.slice(0, 200);
+    } else if (typeof error === 'string') {
+      return error.slice(0, 200);
+    }
   } catch {
-    return 'a value that could not be described';
+    // fall through
   }
+  return 'a value that could not be described was thrown';
 }
 
 interface Ctx {
@@ -118,14 +116,23 @@ interface Slot {
   desc: PropertyDescriptor;
 }
 
+interface Slots {
+  slots: Slot[];
+  /** The object has an own string-keyed property that is not enumerable (a built-in's internal bookkeeping, never JSON data). */
+  hidden: boolean;
+}
+
 /**
  * The own properties of a plain object that will be read, as descriptors only
  * (no getter has run yet), sorted by key. With `names`, those named own
- * properties; without, every own enumerable string-keyed property.
+ * properties; without, every own enumerable string-keyed property. Every
+ * probe, present or absent, is charged to the work budget.
  */
-function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, skip?: string): Slot[] {
+function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, skip?: string): Slots {
   const out: Slot[] = [];
+  let hidden = false;
   if (names !== null) {
+    spend(ctx.budget, names.length);
     for (const name of names) {
       if (name === skip) continue;
       const desc = Reflect.getOwnPropertyDescriptor(object, name);
@@ -135,13 +142,15 @@ function ownSlots(object: object, names: readonly string[] | null, ctx: Ctx, ski
     const keys = Reflect.ownKeys(object);
     spend(ctx.budget, keys.length);
     for (const key of keys) {
-      if (typeof key !== 'string' || key === skip) continue;
+      if (typeof key !== 'string') continue;
       const desc = Reflect.getOwnPropertyDescriptor(object, key);
-      if (desc !== undefined && desc.enumerable === true) out.push({ name: key, desc });
+      if (desc === undefined) continue;
+      if (desc.enumerable !== true) hidden = true;
+      else if (key !== skip) out.push({ name: key, desc });
     }
   }
   out.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
-  return out;
+  return { slots: out, hidden };
 }
 
 /** Read one slot exactly once: a data property gives its value, a getter runs. */
@@ -165,9 +174,16 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
   }
   if (value === null) return null;
   const object = value;
-  if (!Array.isArray(object)) {
-    const time = dateTimeOf(object);
-    if (time !== undefined) return new DateSnap(time);
+  const isArray = Array.isArray(object);
+  if (!isArray) {
+    // Classify by prototype shape and internal slots only; never by any property
+    // the caller controls (no toStringTag, constructor, toJSON).
+    if (isBufferView(object)) throw unsupported(ctx, 'unsupported-value', 'typed arrays and DataViews cannot be compared');
+    if (!isPlainObject(object)) {
+      const kind = nativeKind(object);
+      if (kind !== undefined && kind !== 'other') return new DateSnap(kind.date);
+      throw unsupported(ctx, 'unsupported-value', 'only plain objects, arrays and Dates can be compared');
+    }
   }
   ctx.budget.containers += 1;
   if (ctx.budget.containers > ctx.budget.maxContainers) throw new BudgetExceeded('container limit');
@@ -193,8 +209,15 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
       }
       return new ArrSnap(items);
     }
-    if (isPlainObject(object)) {
-      const slots = ownSlots(object, null, ctx);
+    {
+      const { slots, hidden } = ownSlots(object, null, ctx);
+      // An object that looks empty, or carries hidden own properties, may be a
+      // built-in whose prototype was replaced (a null-prototype Map or Date).
+      if (slots.length === 0 || hidden) {
+        const kind = slots.length === 0 ? emptyObjectKind(object) : nativeKind(object);
+        if (kind !== undefined && kind !== 'other') return new DateSnap(kind.date);
+        if (kind === 'other') throw unsupported(ctx, 'unsupported-value', 'a built-in object with its prototype replaced cannot be compared');
+      }
       const keys: string[] = [];
       const vals: Snap[] = [];
       for (const slot of slots) {
@@ -208,7 +231,6 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
       }
       return new ObjSnap(keys, vals);
     }
-    throw unsupported(ctx, 'unsupported-value', 'only plain objects, arrays and Dates can be compared');
   } finally {
     ctx.ancestors.delete(object);
   }
@@ -285,6 +307,8 @@ export interface ReadConfig {
   key: string;
   /** Fields to read, or null for every own enumerable field. */
   names: readonly string[] | null;
+  /** Also keep the key field among the record's fields (when a caller asked for it by name). */
+  includeKey?: boolean;
 }
 
 export interface ReadDataset {
@@ -334,7 +358,7 @@ function readRecord(
       ctx.trail.pop();
     }
     if (mode === 'array' && validKey(keyValue)) id = keyValue;
-    if (!isPlainObject(raw)) {
+    if (!isPlainObject(raw) || isBufferView(raw)) {
       bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
       return;
     }
@@ -354,8 +378,18 @@ function readRecord(
         return;
       }
     }
-    const slots = ownSlots(raw, cfg.names, ctx, cfg.key);
+    spend(ctx.budget, 1);
+    const { slots, hidden } = ownSlots(raw, cfg.names, ctx, cfg.key);
+    // A record with nothing in it, or with hidden own properties, may be a
+    // built-in whose prototype was replaced (a null-prototype Map or Date).
+    if ((slots.length === 0 && keyDesc === undefined) || hidden) {
+      if ((slots.length === 0 ? emptyObjectKind(raw) : nativeKind(raw)) !== undefined) {
+        bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
+        return;
+      }
+    }
     const fields = new Map<string, Snap>();
+    if (cfg.includeKey === true && keyValue !== undefined) fields.set(cfg.key, snap(keyValue, ctx, 1));
     for (const slot of slots) {
       ctx.trail.push(slot.name);
       const value = slotValue(raw, slot);
@@ -364,8 +398,8 @@ function readRecord(
     }
     entries.push({ id, position, fields });
   } catch (error) {
-    if (error instanceof BudgetExceeded) throw error;
-    if (error instanceof Unsupported) bad(error.reason, error.detail, error.path);
+    if (isOwnError(error) && error instanceof BudgetExceeded) throw error;
+    if (isOwnError(error) && error instanceof Unsupported) bad(error.reason, error.detail, error.path);
     else bad('unreadable', `reading the record threw: ${describeError(error)}`, trailToPath(ctx.trail));
   }
 }
@@ -421,11 +455,17 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     spend(budget, keys.length);
     const slots: Array<{ id: string; desc: PropertyDescriptor }> = [];
+    let hidden = false;
     for (const key of keys) {
       if (typeof key !== 'string') continue;
       // One descriptor read per property: the record comes from this descriptor.
       const desc = Reflect.getOwnPropertyDescriptor(input, key);
-      if (desc !== undefined && desc.enumerable === true) slots.push({ id: key, desc });
+      if (desc === undefined) continue;
+      if (desc.enumerable === true) slots.push({ id: key, desc });
+      else hidden = true;
+    }
+    if ((slots.length === 0 || hidden) && (slots.length === 0 ? emptyObjectKind(input) : nativeKind(input)) !== undefined) {
+      throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const { id, desc } of slots) {
@@ -446,8 +486,8 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     return { entries, invalid, mode: 'object' };
   } catch (error) {
-    if (error instanceof ParityError) throw error;
-    if (error instanceof BudgetExceeded) {
+    if (isOwnError(error) && error instanceof ParityError) throw error;
+    if (isOwnError(error) && error instanceof BudgetExceeded) {
       throw new ParityError('too-large', `${side}: the total number of values read passed the limit of ${budget.maxNodes} (or arrays and objects passed ${budget.maxContainers})`);
     }
     throw new ParityError('unreadable-input', `${side}: reading the input threw: ${describeError(error)}`);
