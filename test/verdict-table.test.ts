@@ -2304,3 +2304,42 @@ describe('PK4-4 / PF-7 / hostile-F7 / PF-9: the constant scanner reads ranges, n
     })
   })
 })
+
+describe('hostile-F4: detail text for oversized object keys is bounded', () => {
+  const big = 'x'.repeat(5 * 1024 * 1024)
+
+  it('F4: a 5 MB id shared across 40 records keeps every detail short and the total small', () => {
+    const dataset: Record<string, unknown> = {}
+    for (let i = 0; i < 40; i += 1) dataset[`r${i}`] = { id: big, v: 1 }
+    const r = compareMirror(dataset, {})
+    expect(r.invalid.length).toBeGreaterThanOrEqual(40)
+    const details = r.invalid.map((entry) => entry.detail ?? '')
+    expect(Math.max(...details.map((d) => d.length))).toBeLessThanOrEqual(256)
+    expect(details.reduce((sum, d) => sum + d.length, 0)).toBeLessThan(20_000)
+    expect(r.invalid.filter((entry) => entry.reason === 'key-mismatch')).toHaveLength(40)
+    expect(r.ok).toBe(false)
+  })
+
+  it('F4: the detail still says which record and which field disagree', () => {
+    const r = compareMirror({ a: { id: 'b', v: 1 } }, {})
+    const mismatch = r.invalid.find((entry) => entry.reason === 'key-mismatch')
+    expect(mismatch?.detail).toContain('"a"')
+    expect(mismatch?.detail).toContain('id')
+    expect(mismatch?.detail).toContain('"b"')
+  })
+
+  it('F4: a long property name and a long key option are clipped too', () => {
+    const name = 'n'.repeat(4000)
+    const r = compareMirror({ [name]: { id: 'other', v: 1 } }, {})
+    const detail = r.invalid.find((entry) => entry.reason === 'key-mismatch')?.detail ?? ''
+    expect(detail.length).toBeLessThanOrEqual(256)
+    const longKey = 'k'.repeat(5000)
+    const noKey = compareMirror([{ v: 1 }], [], { key: longKey })
+    expect((noKey.invalid.find((entry) => entry.reason === 'missing-key')?.detail ?? '').length).toBeLessThanOrEqual(256)
+  })
+
+  it('F4: a key of a different type is still named by type', () => {
+    const r = compareMirror({ a: { id: { nested: true }, v: 1 } }, {})
+    expect(r.invalid.find((entry) => entry.reason === 'key-mismatch')?.detail).toContain('object')
+  })
+})

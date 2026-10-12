@@ -88,6 +88,19 @@ export function describeError(error: unknown): string {
   return 'a value that could not be described was thrown';
 }
 
+/**
+ * A name or value shortened for a message, so detail text never grows with
+ * the input (a 5 MB id shared by many records would otherwise be copied into
+ * every message). Cuts on a code point and says how long the original was.
+ */
+export function clip(text: string, max = 40): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}... (${text.length} units)`;
+}
+
 interface Ctx {
   readonly budget: Budget;
   readonly ancestors: Set<object>;
@@ -438,7 +451,7 @@ function readRecord(
     }
     if (mode === 'array') {
       if (keyValue === undefined) {
-        bad('missing-key', `the key field "${cfg.key}" is missing`);
+        bad('missing-key', `the key field "${clip(cfg.key)}" is missing`);
         return;
       }
       if (problem !== undefined) {
@@ -447,13 +460,14 @@ function readRecord(
         return;
       }
       if (!validKey(keyValue)) {
-        bad('bad-key', `the key field "${cfg.key}" must be a non-empty string or a finite number`);
+        bad('bad-key', `the key field "${clip(cfg.key)}" must be a non-empty string or a finite number`);
         return;
       }
       id = keyValue;
     } else if (keyValue !== undefined) {
       if (problem !== undefined || !validKey(keyValue) || String(keyValue) !== position) {
-        bad('key-mismatch', `property "${String(position)}" carries ${cfg.key} ${typeof keyValue === 'string' || typeof keyValue === 'number' ? JSON.stringify(keyValue) : `of type ${typeof keyValue}`}`);
+        const shown = typeof keyValue === 'string' ? JSON.stringify(clip(keyValue)) : typeof keyValue === 'number' ? String(keyValue) : `of type ${typeof keyValue}`;
+        bad('key-mismatch', `property ${JSON.stringify(clip(String(position)))} carries ${clip(cfg.key)} ${shown}, which is not the property name (the key option names the field)`);
         return;
       }
     }

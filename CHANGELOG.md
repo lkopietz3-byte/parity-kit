@@ -182,3 +182,8 @@ Each has a verdict-table row named for its finding id.
   the oracle does not have (three oracle entries read the Python format spec `.1f` as `1`; the
   kit reads it as 0.1, as documented). A number wrapped in underscores (`_1.25_`) stays skipped
   and is documented. 57 rows are new; no existing row changed.
+- Report detail text is bounded (hostile-F4). A `key-mismatch` detail used to copy the whole
+  offending key, so one 5 MB id shared by 40 records produced 209,716,310 characters of detail.
+  Names and values in detail text are now clipped to 40 characters with their length, so each
+  detail is under 256 characters and the 40-record repro is under 20,000 in total. The
+  `key-mismatch` detail also names the `key` option. Four rows are new.
