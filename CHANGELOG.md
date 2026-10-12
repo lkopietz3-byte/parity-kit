@@ -187,3 +187,15 @@ Each has a verdict-table row named for its finding id.
   Names and values in detail text are now clipped to 40 characters with their length, so each
   detail is under 256 characters and the 40-record repro is under 20,000 in total. The
   `key-mismatch` detail also names the `key` option. Four rows are new.
+- README and comment batch (hostile-F5, PK4-2, PK4-3, PK4-5, DR-4, DR-5, DR-7, C4, PF-8). The
+  `key` option comment no longer says it is ignored for id-keyed objects (it is a consistency
+  check), and the README gives the fix for records with an unrelated `id` field. New README
+  Recipes section: a mirror that carries only some records (filter the canonical set first), two
+  translation files (compare placeholders over the shared, translated keys), case-sensitive keys
+  (`foldCase: false`), and a caller-side waiver for known look-alike keys and known findings.
+  Stated limits: literal `forms` ignore sign, unspaced three-digit CSV or minified JSON is not
+  supported, the empty-object probe costs about 0.2 ms per object (the 30 to 40 microsecond
+  figure was never reproduced and is removed; `fields` skips the probe, `ignoreFields` does not).
+  The strict-TypeScript gate snippet now compiles (it needed `a: StampAudit`). A new test,
+  `test/docs-snippets.test.ts`, type-checks and runs every README `ts` block, so a copied example
+  cannot rot again.

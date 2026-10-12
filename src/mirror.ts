@@ -20,7 +20,7 @@ import {
 import type { DuplicateKey, InvalidEntry, Key, Limits, SuspectKeyGroup } from './types.js';
 
 export interface MirrorOptions {
-  /** The field that identifies a record in an array. Default `"id"`. Ignored for ids taken from object keys. */
+  /** The field that identifies a record in an array. Default `"id"`. In an object keyed by id the property name is the id, and a record that also has this field must agree with it (otherwise `key-mismatch`); name a field the records do not have to turn that check off. */
   key?: string;
   /** Compare only these fields (and `reviewedField`, which is always compared). Default: every own enumerable field of either record. Must name at least one field, and at least one must not be in `ignoreFields`. */
   fields?: readonly string[];

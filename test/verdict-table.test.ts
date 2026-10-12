@@ -2343,3 +2343,80 @@ describe('hostile-F4: detail text for oversized object keys is bounded', () => {
     expect(r.invalid.find((entry) => entry.reason === 'key-mismatch')?.detail).toContain('object')
   })
 })
+
+describe('documentation batch: pinned behaviors the README now states', () => {
+  it('hostile-F5: an object-keyed record with an unrelated id field is key-mismatch, and the detail names the key option', () => {
+    const copy = () => ({ 'chase-ur': { id: 17, cpp: 1.25 }, 'amex-mr': { id: 18, cpp: 1.2 } })
+    const r = compareMirror(copy(), copy())
+    expect(r.ok).toBe(false)
+    expect(r.compared).toBe(0)
+    expect(r.invalid.every((entry) => entry.reason === 'key-mismatch')).toBe(true)
+    expect(r.invalid[0]?.detail).toContain('key option')
+  })
+
+  it('hostile-F5: naming a field the records do not have turns the check off, and id is compared like any field', () => {
+    const copy = () => ({ 'chase-ur': { id: 17, cpp: 1.25 }, 'amex-mr': { id: 18, cpp: 1.2 } })
+    const ok = compareMirror(copy(), copy(), { key: 'recordKey' })
+    expect(ok.status).toBe('ok')
+    expect(ok.compared).toBe(2)
+    const drifted = compareMirror(copy(), { ...copy(), 'amex-mr': { id: 19, cpp: 1.2 } }, { key: 'recordKey' })
+    expect(drifted.changed).toEqual([{ id: 'amex-mr', field: 'id', change: 'different', canonical: 18, mirror: 19 }])
+  })
+
+  it('PK4-2: identical case-sensitive keys are unknown by default and ok with foldCase: false', () => {
+    const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }]
+    const copy = entities.map((e) => ({ ...e }))
+    const folded = compareMirror(entities, copy)
+    expect(folded.status).toBe('unknown')
+    expect(folded.suspectKeys).toHaveLength(1)
+    expect(compareMirror(entities, copy, { foldCase: false }).status).toBe('ok')
+  })
+
+  it('PK4-2: foldCase: false still reports a renamed key as missing plus extra', () => {
+    const r = compareMirror([{ id: 'ABC', v: 1 }], [{ id: 'abc', v: 1 }], { foldCase: false })
+    expect(r.missing).toEqual(['ABC'])
+    expect(r.extra).toEqual(['abc'])
+    expect(r.ok).toBe(false)
+  })
+
+  it('DR-4: a mirror that lacks a record is flagged, and filtering the canonical set to the shipped ids clears it', () => {
+    const canonical = [{ id: 1 }, { id: 2 }, { id: 3 }]
+    expect(compareMirror(canonical, [{ id: 1 }, { id: 2 }]).missing).toEqual([3])
+    expect(compareMirror(canonical.filter((r) => r.id !== 3), [{ id: 1 }, { id: 2 }]).status).toBe('ok')
+  })
+
+  it('C4: a literal form ignores sign, a numeric value does not', () => {
+    expect(findHandTypedConstants('-1.25', [{ id: 'c', value: 1.25, forms: ['1.25'] }]).map((h) => h.kind)).toEqual(['form'])
+    expect(findHandTypedConstants('-1.25', [{ id: 'c', value: 1.25 }])).toEqual([])
+    expect(findHandTypedConstants('-1.25', [{ id: 'c', value: -1.25 }]).map((h) => h.text)).toEqual(['-1.25'])
+  })
+
+  it('PF-8: unspaced three-digit integers between commas are one number (documented limit); decimals are fine', () => {
+    const find = (value: number, text: string) => findHandTypedConstants(text, [{ id: 'c', value }]).map((h) => h.text)
+    expect(find(200, '[100,200,300]')).toEqual([])
+    expect(find(100200300, '[100,200,300]')).toEqual(['100,200,300'])
+    expect(find(300, 'ur,125,300,12')).toEqual([])
+    expect(find(125300, 'ur,125,300,12')).toEqual(['125,300'])
+    expect(find(2.5, '[1.5,2.5,3.5]')).toEqual(['2.5'])
+    expect(find(200, '100, 200, 300')).toEqual(['200'])
+    expect(find(2000, '[1000,2000,3000]')).toEqual(['2000'])
+  })
+
+  it('PK4-3: look-alike twins appear in suspectKeys and can be waived by the caller from the skeleton', () => {
+    const twins = [{ id: 'Saving …', v: 1 }, { id: 'Saving …', v: 1 }]
+    const r = compareMirror(twins, twins.map((t) => ({ ...t })))
+    expect(r.suspectKeys.map((g) => g.skeleton)).toEqual(['saving ...'])
+    expect(r.missing).toEqual([])
+  })
+
+  it('PK4-5: a placeholder-token comparison over shared, translated keys finds a dropped placeholder', () => {
+    const tokens = (text: string) => (text.match(/\{[^}]*\}|<\/?\w+>/g) ?? []).sort().join(' ')
+    const rows = (messages: Record<string, string>, keys: string[]) => keys.map((id) => ({ id, tokens: tokens(messages[id] ?? '') }))
+    const en = { greeting: 'Hello {name}', draft: 'Draft', only: 'Only here' }
+    const fr = { greeting: 'Bonjour', draft: '' }
+    const shared = Object.keys(en).filter((key) => Object.hasOwn(fr, key) && (fr as Record<string, string>)[key] !== '')
+    expect(shared).toEqual(['greeting'])
+    const r = compareMirror(rows(en, shared), rows(fr, shared))
+    expect(r.changed.map((c) => c.id)).toEqual(['greeting'])
+  })
+})

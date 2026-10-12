@@ -131,6 +131,9 @@ Tests:
   that must pass and bad inputs that must be flagged, one row per finding.
 - `test/hostile.test.ts` holds hostile-value cases (Proxies, getters, inherited
   hooks, cross-realm values).
+- `test/docs-snippets.test.ts` type-checks every ```ts block in `README.md` in a strict
+  project against `src/` and runs it with small stand-ins for `process`, `console` and
+  `node:fs`. A block added to the README must be added to its table.
 - `test/scaling.test.ts` holds the 100,000-record and 1 MB cases, and ratio
   checks on CPU time (four times the input must cost well under sixteen times
   the time).

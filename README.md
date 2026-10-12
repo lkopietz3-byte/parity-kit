@@ -121,7 +121,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `key` | `"id"` | Field that identifies a record in an array. |
+| `key` | `"id"` | Field that identifies a record in an array. In an object keyed by id the property name is the id, and a record that also has this field must agree with it (see Keys). |
 | `fields` | every own enumerable field of either record | Compare only these fields. Must name at least one field, and at least one must not be in `ignoreFields`; an empty list, or a list that `ignoreFields` cancels entirely, throws `bad-options` because it would compare nothing and always pass. |
 | `ignoreFields` | none | Fields left out of the comparison. A name that appears in no record lands in `unknownFields`. |
 | `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. It is always compared, even when `fields` does not list it, so a mirror with a different review date is never silent. `ignoreFields` can still remove it. |
@@ -200,7 +200,7 @@ Returns `ok`, `status`, `compared`, and:
 - An object property whose value is `undefined` is treated as absent, the way JSON treats it.
 - Values may be strings, finite or non-finite numbers, booleans, bigints, `null`, `Date`s, arrays and plain objects, nested. A function, symbol, class instance, `Map`, typed array or other exotic object inside a record makes the record `invalid` with reason `unsupported-value`. A cycle is `cycle`. Nesting deeper than `maxDepth` is `too-deep`.
 - A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not.
-- An object with **at least one own enumerable property** is plain data, if its prototype is plain. An object with **no own enumerable property** is checked for being a built-in whose prototype was replaced with `null` or `Object.prototype`. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` found that way is `unsupported-value`, and a Date found that way is a Date. The check calls a captured built-in method that only succeeds on a real instance; it never reads `Symbol.toStringTag`, `constructor` or the prototype, copies nothing, and costs tens to a few hundred microseconds of CPU per empty-looking object such as `{}` (about 30 to 40 µs on a quiet machine; linear in the number of such objects, so 100,000 empty objects cost seconds, and a populated object costs nothing extra). An empty object whose prototype is neither `null` nor this realm's untouched `Object.prototype` cannot be ruled out, so it is also `unsupported-value`; that includes an empty object from another realm, while an object with properties from another realm is fine.
+- An object with **at least one own enumerable property** is plain data, if its prototype is plain. An object with **no own enumerable property** is checked for being a built-in whose prototype was replaced with `null` or `Object.prototype`. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` found that way is `unsupported-value`, and a Date found that way is a Date. The check calls a captured built-in method that only succeeds on a real instance; it never reads `Symbol.toStringTag`, `constructor` or the prototype, copies nothing, and costs about 0.2 ms of CPU per empty-looking object such as `{}` (measured at 170 to 250 µs on a heavily loaded machine; no quiet-machine figure has been verified). The cost is linear in the number of such objects, so 100,000 records with an empty `tags: {}` or `meta: {}` column on each side cost roughly 20 to 50 seconds of CPU, and a populated object, `[]`, `null` or `''` costs nothing extra. If a column like that is not what you are checking, select the columns you do check with `fields`: unselected values are never read, and the probe is skipped (5,000 records took 2.1 s with the empty column read and 0.1 s with `fields: ['name']`). `ignoreFields` does not help, because an ignored field is still read. An empty object whose prototype is neither `null` nor this realm's untouched `Object.prototype` cannot be ruled out, so it is also `unsupported-value`; that includes an empty object from another realm, while an object with properties from another realm is fine.
 - **The remaining exotic-object gap.** Proxies are read through their traps, and host objects or built-ins disguised with a replaced prototype **and** their own enumerable properties are read as plain data. This is a documented limit, not a promised check.
 - Reading a value never runs a getter on a prototype and never reads a property to classify it. Nothing is copied or cloned to classify it either, so classifying an object cannot run an excluded getter, cannot rewrite another record, and costs no memory proportional to its contents. Every property that is read is read once: the key, each selected field and the reviewed field are each looked up a single time, and the value used is the one from that lookup. The only caller code that can run is an own getter on a property being read (once), a Proxy trap, and, for a real `Promise`, the `constructor` lookup that `then` performs.
 - A Promise is recognized by calling `then`, which then looks up `constructor`. `then` is only called when that lookup cannot run caller code: the object has no own `constructor` (or an own data one holding `undefined`) and its prototype is `null` or the untouched `Object.prototype`. Otherwise the object is `unsupported-value`, never plain data. On Node before 24, which has no `Error.isError`, an Error is recognized through `Object.prototype.toString`, used only under the same kind of precondition (no own `Symbol.toStringTag`, a `null` or untouched `Object.prototype`); otherwise the object is `unsupported-value`. If your Proxy has a `get` trap, that fallback path can run it.
@@ -225,7 +225,7 @@ Returns `ok`, `status`, `compared`, and:
 - A key used twice on one side is a `duplicateKey`. That id is not compared field by field, but it still counts as present, so it is never reported as missing.
 - A record that cannot be read but whose key can be read still counts as present. It is never reported as missing.
 - A record whose **key** cannot be read (a getter or Proxy trap on the key field threw) has no identity, so it is `invalid` with reason `unreadable`. It might be any record the other side lacks, so those ids are not claimed as `missing` or `extra` while unreadable records could account for all of them: `[{ id: 'a' }]` against a mirror whose only record has a throwing `id` getter is `unknown`, not `missing: ['a']`. When more ids are absent than there are unreadable records, the surplus is real evidence and they are all listed.
-- In an object-keyed dataset, a record that also carries the key field must agree with its property name, otherwise it is `key-mismatch`.
+- In an object-keyed dataset, a record that also carries the key field must agree with its property name, otherwise it is `key-mismatch`. If your records carry an unrelated field that happens to be called `id` (a numeric database id), pass `key` naming a field they do not have, for example `key: 'recordKey'`; the real `id` field is then compared like any other field. The `key-mismatch` detail names the `key` option for this reason.
 
 ### `stampHidesDrift`
 
@@ -239,8 +239,8 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 - It does **not** match inside a longer number or identifier: `11.256`, `21.25`, `1.255`, `0.125`, a dotted run such as `1.25.3` or `10.1.25.7`, `v1.25`, `x_1.25`, `abc1.25`, `1.25_x`, or a zero-padded run such as `08` or `007`. Letters after a number are fine (`1.25x`, `1.25c`). A number wrapped in underscores, as Markdown italics (`_1.25_`), is read as part of an identifier and skipped; add the literal text to `forms` (`"_1.25_"`) if you need it.
 - **Unspaced scripts do not glue.** Letters of scripts that are written without spaces between words (Han, Hiragana, Katakana, Hangul, Thai, Lao, Khmer, Myanmar) do not glue to a number or to a literal form beside them, so `1.25` is found in `每点价值1.25美分`, `還元率1.25倍`, `ポイントあたり1.25円`, `값은1.25입니다` and `อัตรา1.25`. Other scripts glue like Latin letters: `abc1.25`, `значение1.25` and `القيمة1.25` are skipped, and a decimal digit of any script, Thai digits included, still makes a longer number.
 - A `-` is part of the number when it follows the start of the text, whitespace, an opening bracket or an operator. So `-1.25` is minus 1.25 and does not match a registered `1.25`, while `x-1.25` reads as 1.25.
-- A **string** `value`, and every entry in `forms`, is found as exact, case-sensitive text, and shares the number boundary rules above. A match may not begin or end strictly inside a number: `250` is not found in `1,250`, `8` and `1e` are not found in `1e+8`, `1.25` is found in `1.25,0.5`. A form that starts or ends with a digit must start or end exactly where a number starts or ends, with no letter, digit, underscore or non-ASCII decimal digit glued on (`v1.25`, `1.25_x` and `1.25６` are not hits). A form that starts or ends with anything else only has to not touch another letter, digit or underscore.
-- **Commas.** A comma followed by exactly three digits (and then a non-digit) continues a number as a thousands separator, so `1,250` is one number, 1250, and `1,250,5` is 1250 and 5. Any other comma ends the number, so `1,25` is 1 and 25, `1.25,0.5` is 1.25 and 0.5, and `12,34,567` is 12 and 34567. A list written like `1,250` is therefore read as one number; write a space after the comma.
+- A **string** `value`, and every entry in `forms`, is found as exact, case-sensitive text, and shares the number boundary rules above. A match may not begin or end strictly inside a number: `250` is not found in `1,250`, `8` and `1e` are not found in `1e+8`, `1.25` is found in `1.25,0.5`. A form that starts or ends with a digit must start or end exactly where a number starts or ends, with no letter, digit, underscore or non-ASCII decimal digit glued on (`v1.25`, `1.25_x` and `1.25６` are not hits). A form that starts or ends with anything else only has to not touch another letter, digit or underscore. A form is literal text and ignores sign: the form `1.25` is found inside `-1.25`, while the number `1.25` is not (it is minus 1.25). Register `-1.25` as its own value if you need the sign.
+- **Commas.** A comma followed by exactly three digits (and then a non-digit) continues a number as a thousands separator, so `1,250` is one number, 1250, and `1,250,5` is 1250 and 5. Any other comma ends the number, so `1,25` is 1 and 25, `1.25,0.5` is 1.25 and 0.5, and `12,34,567` is 12 and 34567. A list written like `1,250` is therefore read as one number; write a space after the comma. Text you cannot reformat is not supported when it packs three-digit integers between bare commas: in the minified JSON array `[100,200,300]` or the CSV row `ur,125,300,12` the digits run together (read as 100200300 and 125300), so `200` and `300` are not found. Cells with decimals or other digit counts are fine. Parse such data and compare it with `compareMirror` instead of scanning it as text.
 - A non-ASCII decimal digit (full-width, Arabic-Indic, Devanagari and so on) next to a number makes it part of a longer number, so nothing is found. Only ASCII digits spell a number.
 - If a number hit and a literal hit for the same constant overlap, the longer one is kept, and the number wins a tie. Nothing else is suppressed: two overlapping literal hits (`foo-bar` and `bar-baz` in `foo-bar-baz`) are both reported. The same text listed more than once, for one constant or several, is one pattern, so repeating it adds no work; each constant that lists it still gets its hit.
 - Scanning is linear in the length of the text for a fixed registry (an Aho-Corasick automaton for literal forms, one pass for numbers). Sorting the matches adds a log factor in the number of matches. Many heavily overlapping forms multiply the number of raw hits by the registry size.
@@ -280,7 +280,9 @@ A field added or removed counts as a change. The expiry field is not evidence: m
 **`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong. Read `summary` first: it says how many of the records also changed a value, source or reviewer (`withEvidence`) and how many did not (`withoutEvidence`, which are also in `stampOnly`). A bump with `withoutEvidence: 0` is an automated but evidenced update, such as a bot refreshing many records at once; it still sets `status` to `flagged`, because a person should confirm the bot's change is real. If you accept that for a source, waive only the evidenced bulk bumps and keep every other finding failing:
 
 ```ts
-const acceptEvidencedBulk = (a) =>
+import type { StampAudit } from 'parity-kit';
+
+const acceptEvidencedBulk = (a: StampAudit) =>
   a.ok ||
   (a.bulkBump.every((b) => b.withoutEvidence === 0) && !a.noOverlap &&
     a.stampOnly.length === 0 && a.future.length === 0 && a.backward.length === 0 &&
@@ -350,6 +352,66 @@ if (!result.ok) {
 ```
 
 Treat `status: 'unknown'` as a failure too. `ok` already does. A gate that passes when it could not read something is not a gate.
+
+## Recipes
+
+### A mirror that carries only some of the records
+
+There is no subset option, on purpose: a record that quietly dropped out of the mirror must still be reported. Filter the canonical set to the ids the mirror is meant to carry, taking that list from somewhere other than the mirror itself (a build manifest, a constant in your code). Records the mirror has that the canonical set lacks are still reported as `extra`.
+
+```ts
+const shipped = new Set(['chase-ur', 'amex-mr']);
+const result = compareMirror(
+  programs.filter((p) => shipped.has(p.id)),
+  extension,
+);
+```
+
+### Two translation files: do the keys they share still agree?
+
+Passing whole nested locale files makes each top-level section a record and reports every translation as `different`. Compare what a translation must keep instead: build one record per message key, keep only the keys both files have and the translated (non-empty) ones, and compare the placeholders and tags each message contains.
+
+```ts
+const tokens = (text: string) => (text.match(/\{[^}]*\}|<\/?\w+>/g) ?? []).sort().join(' ');
+const rows = (messages: Record<string, string>, keys: string[]) =>
+  keys.map((id) => ({ id, tokens: tokens(messages[id] ?? '') }));
+
+const en: Record<string, string> = { greeting: 'Hello {name}', save: 'Save <b>now</b>', draft: 'Draft' };
+const fr: Record<string, string> = { greeting: 'Bonjour', save: 'Enregistrer <b>maintenant</b>', draft: '' };
+const shared = Object.keys(en).filter((key) => Object.hasOwn(fr, key) && fr[key] !== '');
+const result = compareMirror(rows(en, shared), rows(fr, shared));
+// result.changed: the French greeting dropped {name}
+```
+
+Keys one file lacks, and empty strings that mean "not translated yet", are a separate question; this check leaves them out on purpose.
+
+### Case-sensitive keys
+
+By default two keys that differ only by case (`&AElig;` and `&aelig;`) are look-alikes and make the result `unknown`. For key sets where case carries meaning, such as HTML entity names, pass `foldCase: false`. The trade-off: uppercase look-alike letters from another alphabet (a Cyrillic `А` for a Latin `A`) are then no longer grouped. A renamed key still shows up as `missing` plus `extra`, so nothing passes.
+
+```ts
+const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }];
+const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCase: false });
+// strict.ok is true; without foldCase: false the result is unknown with one suspectKeys group
+```
+
+### Known look-alike keys and known findings
+
+Some real data keeps two keys that differ only by a no-break space, or one record with a date that is known to be wrong. The kit has no allow list or baseline: a waiver is a decision a person made, so it belongs in your repository where it can be reviewed. Filter the result yourself, and keep every other list failing:
+
+```ts
+import type { MirrorResult } from 'parity-kit';
+
+const knownTwins = new Set(['saving ...']); // the `skeleton` of each reviewed group in result.suspectKeys
+const acceptKnownTwins = (r: MirrorResult) =>
+  r.ok ||
+  (r.missing.length === 0 && r.extra.length === 0 && r.changed.length === 0 &&
+    r.stampHidesDrift.length === 0 && r.duplicateKeys.length === 0 && r.invalid.length === 0 &&
+    r.unknownFields.length === 0 && !r.noFieldsCompared &&
+    r.suspectKeys.every((group) => knownTwins.has(group.skeleton)));
+```
+
+The same pattern works for `auditReviewStamps`: drop the entries whose `id` is on a reviewed list (for example `audit.future.filter((f) => !knownFutureIds.has(f.id))`) and require every other list to be empty, as in the bulk-bump gate above.
 
 ## Development
 

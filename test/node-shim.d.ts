@@ -1,7 +1,7 @@
 // The tests run on Node but the project carries no @types/node. These are the
 // only Node APIs the tests use.
 declare module 'node:vm' {
-  const vm: { runInNewContext(code: string): unknown }
+  const vm: { runInNewContext(code: string, context?: object): unknown }
   export default vm
 }
 declare module 'node:child_process' {
@@ -9,6 +9,7 @@ declare module 'node:child_process' {
 }
 declare module 'node:fs' {
   export function mkdtempSync(prefix: string): string
+  export function readFileSync(path: string, encoding: 'utf8'): string
   export function rmSync(path: string, options: { recursive: boolean; force: boolean }): void
 }
 declare module 'node:os' {
