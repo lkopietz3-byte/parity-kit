@@ -5,7 +5,7 @@ A small, zero-dependency TypeScript library for two questions about data you pub
 1. **Does every copy of a fact still match its source of truth?** (`compareMirror`, `findHandTypedConstants`)
 2. **Was a review date earned by an actual recheck?** (`auditReviewStamps`)
 
-You hand it data. It hands back a plain report of what differs. It reads no files, makes no network calls and reads no clock unless you give it a time. Part of the honesty kits, a family of small checks for the claims a product makes.
+It is for developers who keep a source-of-truth data file and publish copies of it (a website, an extension, docs) and want a CI check that fails when the copies drift or a review date moves without a recheck. You hand it data. It hands back a plain report of what differs. It reads no files, makes no network calls and reads no clock unless you give it a time. It does not decide which copy is right, prove that a person rechecked anything, or check that a value is true (see "What it does not do"). Part of the honesty kits, a family of small checks for the claims a product makes.
 
 This package is private and unlicensed (`"private": true`, `"license": "UNLICENSED"`). It is not published anywhere.
 
@@ -107,7 +107,9 @@ const audit = auditReviewStamps(oldSnapshot, newSnapshot, {
 // audit.stampOnly, audit.bulkBump, audit.future, audit.backward, audit.unknown, ...
 ```
 
-## The three functions
+## The exports
+
+`compareMirror`, `findHandTypedConstants`, `auditReviewStamps` and `ParityError`, plus the option, result and entry types (`MirrorOptions`, `MirrorResult`, `StampOptions`, `StampAudit`, `RegisteredConstant`, `HandTypedMatch`, `Limits`, `Status` and the rest of the report entry types). `api-surface.json` lists the runtime names and `verify:package` checks them against the packed tarball.
 
 ### `compareMirror(canonical, mirror, options?)`
 
@@ -343,8 +345,10 @@ Treat `status: 'unknown'` as a failure too. `ok` already does. A gate that passe
 ## Development
 
 ```sh
-npm install
+npm ci
 npm run verify      # lint, typecheck, tests, build, packaging checks
+npm run attw        # check the packed types resolve for ESM consumers
+npm run audit:dependencies
 ```
 
 See `ENGINEERING.md` for the design rules and `CONTRIBUTING.md` for how to change behavior.

@@ -13,6 +13,7 @@ Check that every copy of a fact still matches its source of truth, and that a re
 - `npm run typecheck`
 - `npm run test`
 - `npm run build`
+- `npm run attw` checks the packed types; `npm run audit:dependencies` audits the lockfile.
 - `npm run verify:package` packs and installs the tarball offline; run `npm run build` first.
 
 ## Rules
