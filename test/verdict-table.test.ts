@@ -2166,3 +2166,141 @@ describe('PF-3 / DR-2: reviewedField is always compared, even when fields is set
     expect(r.changed).toHaveLength(1)
   })
 })
+
+describe('PK4-4 / PF-7 / hostile-F7 / PF-9: the constant scanner reads ranges, numeric separators and unspaced scripts', () => {
+  const found = (value: number | string, text: string, forms?: string[]): string[] =>
+    findHandTypedConstants(text, [{ id: 'c', value, ...(forms === undefined ? {} : { forms }) }]).map((h) => h.text)
+
+  describe('PK4-4: ".." ranges', () => {
+    it.each([
+      [100, '{1..100}'],
+      [1, '{1..100}'],
+      [5, 'range 1..5'],
+      [1, 'range 1..5'],
+      [2025, '2020..2025'],
+      [2020, '2020..2025'],
+      [3, 'wait...3'],
+      [2, '1.0..2.0'],
+    ] as Array<[number, string]>)('%s is found in %j', (value, text) => {
+      expect(found(value, text)).toHaveLength(1)
+    })
+
+    it.each([
+      [0.5, 'range 1..5'],
+      [0.5, 'wait...5'],
+      [0.2025, '2020..2025'],
+      [0.5, 'x.5'],
+    ] as Array<[number, string]>)('%s is NOT found in %j', (value, text) => {
+      expect(found(value, text)).toEqual([])
+    })
+
+    it('a leading-dot number after a space or bracket is still 0.5', () => {
+      expect(found(0.5, 'rate .5 here')).toEqual(['.5'])
+      expect(found(0.5, '(.5)')).toEqual(['.5'])
+    })
+
+    it('the hit for the number after the dots reports the right offset', () => {
+      const [hit] = findHandTypedConstants('range 1..5', [{ id: 'c', value: 5 }])
+      expect(hit).toMatchObject({ text: '5', index: 9, column: 10 })
+    })
+
+    it('a literal form that starts with a digit is found after dots too', () => {
+      expect(found('5 pts', 'range 1..5 pts')).toEqual(['5 pts'])
+    })
+  })
+
+  describe('PF-7: numeric separators', () => {
+    it.each([
+      [1000000, 'const MAX = 1_000_000;'],
+      [86400000, 'ms = 86_400_000'],
+      [1250, '1_250'],
+      [1250, 'x = 1_250 + 2'],
+      [1000.5, 'v = 1_000.5'],
+      [1000000, '1000000'],
+      [1000000, '1,000,000'],
+    ] as Array<[number, string]>)('%s is found in %j', (value, text) => {
+      expect(found(value, text)).toHaveLength(1)
+    })
+
+    it.each([
+      [1, '1_250'],
+      [250, '1_250'],
+      [1, 'const MAX = 1_000_000;'],
+      [1250, 'x_1_250'],
+      [1250, 'a1_250'],
+      [1250, '1_250_x'],
+      [1250, '1_2500'],
+      [12, '1_2'],
+      [1250, '1,250_000'],
+      [1250000, '1,250_000'],
+    ] as Array<[number, string]>)('%s is NOT found in %j', (value, text) => {
+      expect(found(value, text)).toEqual([])
+    })
+
+    it('an underscore group needs exactly three digits, like a comma group', () => {
+      expect(found(100000, '1_00_000')).toEqual([])
+      expect(found(1, '1_00_000')).toEqual([])
+    })
+  })
+
+  describe('hostile-F7 / PF-9: numbers next to unspaced scripts', () => {
+    it.each([
+      ['每点价值1.25美分', 'Han'],
+      ['還元率1.25倍', 'Han'],
+      ['ポイントあたり1.25円', 'Katakana and Hiragana'],
+      ['값은1.25입니다', 'Hangul'],
+      ['อัตรา1.25', 'Thai'],
+      ['ພາບ1.25', 'Lao'],
+      ['អត្រា1.25', 'Khmer'],
+      ['နှုန်း1.25', 'Myanmar'],
+      ['カー1.25', 'the Katakana prolonged sound mark'],
+    ])('1.25 is found in %s (%s)', (text) => {
+      expect(found(1.25, text)).toEqual(['1.25'])
+    })
+
+    it.each([
+      ['abc1.25'],
+      ['v1.25'],
+      ['x_1.25'],
+      ['القيمة1.25'],
+      ['значение1.25'],
+      ['αβγ1.25'],
+      ['价值abc1.25'],
+      ['๑1.25'],
+      ['１1.25'],
+    ])('1.25 is still skipped in %s', (text) => {
+      expect(found(1.25, text)).toEqual([])
+    })
+
+    it('a non-ASCII digit of an unspaced script still glues', () => {
+      expect(found(1.25, 'อัตรา๑1.25')).toEqual([])
+    })
+
+    it('a literal form made of unspaced script is found inside running text', () => {
+      expect(found('价值', '每点价值1.25美分')).toEqual(['价值'])
+      expect(found('美分', '每点价值1.25美分')).toEqual(['美分'])
+    })
+
+    it('a Latin literal form still must not touch a Latin letter', () => {
+      expect(found('pts', 'points')).toEqual([])
+      expect(found('pts', 'x pts')).toEqual(['pts'])
+    })
+
+    it('a Latin form next to unspaced script is found', () => {
+      expect(found('USD', '价格USD')).toEqual(['USD'])
+    })
+
+    it('a hyphen after a Han character reads like a hyphen after a Latin letter (x-1.25 is 1.25)', () => {
+      expect(found(1.25, '价值-1.25')).toEqual(['1.25'])
+      expect(found(1.25, 'x-1.25')).toEqual(['1.25'])
+      expect(found(1.25, '价值 -1.25')).toEqual([])
+    })
+  })
+
+  describe('PF-9: underscore-wrapped numbers are documented, not read', () => {
+    it('a number wrapped in underscores is part of an identifier, so only a literal form finds it', () => {
+      expect(found(1.25, '_1.25_')).toEqual([])
+      expect(found(1.25, 'the _1.25_ rate', ['_1.25_'])).toEqual(['_1.25_'])
+    })
+  })
+})

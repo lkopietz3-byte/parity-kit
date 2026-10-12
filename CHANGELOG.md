@@ -171,3 +171,14 @@ Each has a verdict-table row named for its finding id.
   was silently skipped, so a mirror with `lastReviewed: '2024-01-01'` against `'2026-06-08'` was
   `ok`. It is now `flagged`. Other unlisted fields may still differ, and `ignoreFields` can still
   remove the review field. Five rows are new; no existing row changed.
+- `findHandTypedConstants` reads three more kinds of real text (PK4-4, PF-7, hostile-F7, PF-9). A
+  `.` right after another `.` is punctuation, so `5` is found in `range 1..5`, `100` in `{1..100}`
+  and `2025` in `2020..2025`, and `0.5` is no longer a false hit in them. An underscore works as a
+  thousands separator like a comma (`1_000_000`, `86_400_000`, `1_250`). A number or literal form
+  next to a letter of an unspaced script (Han, Hiragana, Katakana, Hangul, Thai, Lao, Khmer,
+  Myanmar) is no longer treated as glued, so `1.25` is found in `每点价值1.25美分` and
+  `อัตรา1.25`; `abc1.25`, `v1.25`, `x_1.25` and Arabic, Cyrillic or Greek letters still glue. On
+  the 400-text, 309-hit field corpus the kit now finds the two range hits it missed, with 0 hits
+  the oracle does not have (three oracle entries read the Python format spec `.1f` as `1`; the
+  kit reads it as 0.1, as documented). A number wrapped in underscores (`_1.25_`) stays skipped
+  and is documented. 57 rows are new; no existing row changed.

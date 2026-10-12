@@ -58,6 +58,26 @@ function charAt(text: string, index: number): string {
 
 const isWord = (ch: string): boolean => ch !== '' && WORD.test(ch);
 
+const DECIMAL_DIGIT = /^\p{Nd}$/u;
+/** Scripts written without spaces between words, so a letter of one next to a number or a word is not "glued" to it. */
+const UNSPACED = /^[\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}]$/u;
+
+/**
+ * Do two touching characters read as one word? Both must be letters, digits or
+ * underscore, and neither may be a letter of an unspaced script (Han,
+ * Hiragana, Katakana, Hangul, Thai, Lao, Khmer, Myanmar), because those texts
+ * put a number right next to the words around it. A decimal digit of any
+ * script always glues: it makes a longer number.
+ */
+function gluesTo(ch: string, other: string): boolean {
+  if (!isWord(ch) || !isWord(other)) return false;
+  return !(isUnspacedLetter(ch) || isUnspacedLetter(other));
+}
+
+function isUnspacedLetter(ch: string): boolean {
+  return UNSPACED.test(ch) && !DECIMAL_DIGIT.test(ch);
+}
+
 // ---------------------------------------------------------------------------
 // Numeric tokens
 // ---------------------------------------------------------------------------
@@ -80,8 +100,6 @@ interface LexedRun {
   /** An underscore or a non-ASCII decimal digit touches the end. */
   rightGlued: boolean;
 }
-
-const DECIMAL_DIGIT = /^\p{Nd}$/u;
 
 /** Characters before a "-" that make it a binary operator or a separator rather than a sign. */
 function minusIsSign(text: string, signIndex: number): boolean {
@@ -106,7 +124,8 @@ function* lexNumbers(text: string): Generator<LexedRun> {
   let i = 0;
   while (i < n) {
     const c = text.charCodeAt(i);
-    const startsDot = c === 46 && i + 1 < n && isDigitCode(text.charCodeAt(i + 1));
+    // ".5" is a number, but not after another dot: in "1..5" or "wait...5" the dots are a range or an ellipsis and the 5 is a whole number.
+    const startsDot = c === 46 && i + 1 < n && isDigitCode(text.charCodeAt(i + 1)) && !(i > 0 && text.charCodeAt(i - 1) === 46);
     if (!isDigitCode(c) && !startsDot) {
       i += 1;
       continue;
@@ -119,9 +138,12 @@ function* lexNumbers(text: string): Generator<LexedRun> {
       while (j < n && isDigitCode(text.charCodeAt(j))) j += 1;
       // A zero-padded run (08, 007) is a code, a date part or an id, not a typed number.
       if (j - start > 1 && text.charCodeAt(start) === 48) valid = false;
+      // Groups of exactly three digits after "," or "_" (1,250 and 1_250); the separator must not change within a number.
+      const separator = text.charCodeAt(j);
       while (
         j + 3 < n &&
-        text.charCodeAt(j) === 44 &&
+        (separator === 44 || separator === 95) &&
+        text.charCodeAt(j) === separator &&
         isDigitCode(text.charCodeAt(j + 1)) &&
         isDigitCode(text.charCodeAt(j + 2)) &&
         isDigitCode(text.charCodeAt(j + 3)) &&
@@ -150,7 +172,7 @@ function* lexNumbers(text: string): Generator<LexedRun> {
     }
     // Boundaries.
     const before = charBefore(text, start);
-    const leftGlued = isWord(before);
+    const leftGlued = before !== '' && gluesTo(before, '0');
     const after = j < n ? charAt(text, j) : '';
     // "_" glues the number to an identifier; a non-ASCII digit makes it part of a longer number.
     const rightGlued = after === '_' || (after !== '' && DECIMAL_DIGIT.test(after));
@@ -170,7 +192,7 @@ function* numberTokens(text: string): Generator<NumberToken> {
       negative = true;
       tokenStart = run.start - 1;
     }
-    const value = Number(text.slice(run.start, run.end).replace(/,/g, ''));
+    const value = Number(text.slice(run.start, run.end).replace(/[,_]/g, ''));
     if (Number.isFinite(value)) yield { start: tokenStart, end: run.end, value: negative ? -value : value };
   }
 }
@@ -280,14 +302,14 @@ function literalBoundariesOk(text: string, start: number, end: number, flags: Ui
   if (startsWithNumber(first + charAt(text, start + first.length))) {
     const f = flags[start] as number;
     if ((f & RUN_START) === 0 || (f & RUN_LEFT_GLUED) !== 0) return false;
-  } else if (isWord(first) && isWord(charBefore(text, start))) {
+  } else if (gluesTo(first, charBefore(text, start))) {
     return false;
   }
   const last = charBefore(text, end);
   if (isDigitCode(last.charCodeAt(0))) {
     const f = flags[end] as number;
     if ((f & RUN_END) === 0 || (f & RUN_RIGHT_GLUED) !== 0) return false;
-  } else if (isWord(last) && isWord(charAt(text, end))) {
+  } else if (gluesTo(last, charAt(text, end))) {
     return false;
   }
   return true;

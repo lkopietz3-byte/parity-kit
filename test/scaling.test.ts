@@ -115,6 +115,12 @@ describe('1 MB of text', () => {
     ['exponent-like runs', (n) => '1e1e1e'.repeat(n / 6)],
     ['all newlines', (n) => '\n'.repeat(n)],
     ['carriage returns', (n) => '\r'.repeat(n)],
+    ['PK4-4 dots and ranges', (n) => '1..5...'.repeat(n / 7)],
+    ['PK4-4 a long run of dots', (n) => '.'.repeat(n)],
+    ['PF-7 underscore groups', (n) => '1_000_000_'.repeat(n / 10)],
+    ['PF-7 underscore runs', (n) => '1_'.repeat(n / 2)],
+    ['hostile-F7 digits between unspaced-script letters', (n) => '价值1.25美分'.repeat(n / 8)],
+    ['hostile-F7 Thai and Hangul runs', (n) => 'อัตรา1값은'.repeat(n / 8)],
   ]
   it.each(adversarial)('stays linear on %s', (_name, make) => {
     const r = ratio(() => findHandTypedConstants(make(200_000), registry), () => findHandTypedConstants(make(800_000), registry))
