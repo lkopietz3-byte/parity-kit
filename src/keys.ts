@@ -143,18 +143,26 @@ const COMBINING = /^\p{M}$/u;
  * Can this string key be analyzed for look-alikes within a bound? A key longer
  * than `maxLength` UTF-16 units is `key-too-long`; a key with a run of more than
  * 32 combining marks is `key-unnormalizable` (Unicode normalization sorts such
- * a run, which takes quadratic time). Checked before any normalization, in one
- * linear pass.
+ * a run, which takes quadratic time). The run is counted on the compatibility
+ * decomposition of each character, because a character such as U+FF9E becomes a
+ * combining mark under NFKC. Checked before any normalization, in one linear
+ * pass (a decomposition is at most a few code points).
  */
 export function keyProblem(key: string, maxLength: number): InvalidReason | undefined {
   if (key.length > maxLength) return 'key-too-long';
   let run = 0;
   for (const ch of key) {
-    if (COMBINING.test(ch)) {
-      run += 1;
-      if (run > MAX_COMBINING_RUN) return 'key-unnormalizable';
-    } else {
+    if ((ch.codePointAt(0) as number) < 0x80) {
       run = 0;
+      continue;
+    }
+    for (const part of ch.normalize('NFKD')) {
+      if (COMBINING.test(part)) {
+        run += 1;
+        if (run > MAX_COMBINING_RUN) return 'key-unnormalizable';
+      } else {
+        run = 0;
+      }
     }
   }
   return undefined;

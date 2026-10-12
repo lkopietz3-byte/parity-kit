@@ -384,8 +384,8 @@ function readRecord(
     entries.push({ id, position, fields: undefined });
   };
   try {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      bad('not-an-object', `a record must be an object, got ${raw === null ? 'null' : Array.isArray(raw) ? 'an array' : typeof raw}`);
+    if (typeof raw !== 'object' || raw === null) {
+      bad('not-an-object', `a record must be an object, got ${raw === null ? 'null' : typeof raw}`);
       return;
     }
     // The key is read first and on its own, before anything else about the
@@ -403,6 +403,11 @@ function readRecord(
     // A refused key is never normalized, so only a key that will be analyzed is charged.
     if (typeof keyValue === 'string' && problem === undefined) spend(ctx.budget, keyValue.length);
     if (mode === 'array' && problem === undefined && validKey(keyValue)) id = keyValue;
+    if (Array.isArray(raw)) {
+      // Judged after the key is read, so an array that carries a usable key keeps its identity.
+      bad('not-an-object', 'a record must be an object, got an array');
+      return;
+    }
     if (isBufferView(raw)) {
       bad('not-a-plain-object', 'a record must be a plain object (no Date, Map, or class instance)');
       return;
@@ -535,14 +540,8 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const { id, desc } of slots) {
-      let raw: unknown;
-      try {
-        raw = descriptorValue(input, desc);
-      } catch (error) {
-        invalid.push({ position: id, id, reason: 'unreadable', detail: `reading the property threw: ${describeError(error)}` });
-        entries.push({ id, position: id, fields: undefined });
-        continue;
-      }
+      // The name is judged before its getter runs, so a refused or empty name
+      // costs nothing and runs no user code.
       const problem = keyProblem(id, budget.maxKeyLength);
       if (problem !== undefined) {
         invalid.push({ position: id, reason: problem, detail: `the key is ${problem === 'key-too-long' ? `longer than ${budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}` });
@@ -555,6 +554,14 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
         continue;
       }
       spend(budget, id.length);
+      let raw: unknown;
+      try {
+        raw = descriptorValue(input, desc);
+      } catch (error) {
+        invalid.push({ position: id, id, reason: 'unreadable', detail: `reading the property threw: ${describeError(error)}` });
+        entries.push({ id, position: id, fields: undefined });
+        continue;
+      }
       readRecord(raw, id, 'object', recordCfg, ctx, entries, invalid);
     }
     return { entries, invalid, mode: 'object' };

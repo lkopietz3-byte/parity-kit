@@ -188,6 +188,33 @@ describe('hostile keys', () => {
     }
   })
 
+  it('a key whose compatibility decomposition builds a long combining run is refused quickly', () => {
+    const id = `e${'\u0301\uFF9E'.repeat(128_000)}`
+    let r: ReturnType<typeof compareMirror> | undefined
+    const ms = cpuMs(() => {
+      r = compareMirror([{ id }], [{ id }], { limits: { maxKeyLength: 1_048_576 } })
+    }, 1)
+    expect(r?.invalid.map((i) => i.reason)).toEqual(['key-unnormalizable', 'key-unnormalizable'])
+    expect(ms).toBeLessThan(500)
+  })
+
+  it('a throwing getter on an overlength property name is refused quickly', () => {
+    const long = `e${'\u0301'.repeat(64_000)}`
+    const make = (): Record<string, unknown> =>
+      Object.defineProperty({}, long, {
+        enumerable: true,
+        get() {
+          throw new Error('boom')
+        },
+      })
+    let r: ReturnType<typeof compareMirror> | undefined
+    const ms = cpuMs(() => {
+      r = compareMirror(make(), make())
+    }, 1)
+    expect(r?.invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
+    expect(ms).toBeLessThan(200)
+  })
+
   it('the same key under the default limits is refused as too long', () => {
     const id = `a${'\u0315'.repeat(16_000)}${'\u0300'.repeat(16_000)}`
     expect(compareMirror([{ id }], [{ id }]).invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])

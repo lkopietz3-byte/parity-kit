@@ -307,7 +307,7 @@ Limits (`limits: { maxRecords, maxNodes, maxDepth, maxKeyLength }`):
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. |
 | `maxNodes` | 10,000,000 | Most values read in one call, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this. |
-| `maxKeyLength` | 4,096 (at most 1,048,576) | Longest string key, in UTF-16 units. A longer key, or a key with a run of more than 32 combining marks (Unicode normalization is quadratic in such a run), makes its record `invalid` with `key-too-long` or `key-unnormalizable`; it is never analyzed for look-alikes. Key lengths count against `maxNodes`. |
+| `maxKeyLength` | 4,096 (at most 1,048,576) | Longest string key, in UTF-16 units. A longer key, or a key with a run of more than 32 combining marks, counted after compatibility decomposition (Unicode normalization is quadratic in such a run), makes its record `invalid` with `key-too-long` or `key-unnormalizable`; it is never analyzed for look-alikes. Key lengths count against `maxNodes`. In an id-keyed object the name is checked before its getter runs. |
 | `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
 Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. Comparison itself never recurses deeper than `maxDepth`.

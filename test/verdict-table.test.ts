@@ -1459,6 +1459,39 @@ describe('compareMirror: keys that cannot be analyzed within a bound are invalid
     expect(r.invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
   })
 
+  it('a refused property name is refused before its getter runs, and a throwing getter does not bypass the bound', () => {
+    const long = `e${'\u0301'.repeat(64_000)}`
+    let ran = 0
+    const make = (): Record<string, unknown> =>
+      Object.defineProperty({}, long, {
+        enumerable: true,
+        get() {
+          ran += 1
+          throw new Error('boom')
+        },
+      })
+    const r = compareMirror(make(), make())
+    expect(r.invalid.map((i) => i.reason)).toEqual(['key-too-long', 'key-too-long'])
+    expect(ran).toBe(0)
+  })
+
+  it('a character that decomposes into a combining mark counts toward the run', () => {
+    const id = `e${'\u0301\uFF9E'.repeat(40)}`
+    expect(reasons(id, { maxKeyLength: 1_048_576 })).toEqual(['key-unnormalizable', 'key-unnormalizable'])
+    expect(reasons(`e${'\u0301\uFF9E'.repeat(16)}`, { maxKeyLength: 1_048_576 })).toEqual([])
+  })
+
+  it('an array that carries a readable key keeps its identity and is not reported as missing or extra', () => {
+    const arr = Object.assign([], { id: 'a' })
+    const r = compareMirror([{ id: 'a' }], [arr])
+    expect(r.missing).toEqual([])
+    expect(r.extra).toEqual([])
+    expect(r.invalid.map((i) => i.reason)).toEqual(['not-an-object'])
+    const back = compareMirror([arr], [{ id: 'a' }])
+    expect(back.missing).toEqual([])
+    expect(back.extra).toEqual([])
+  })
+
   it('a refused key is not reported as missing or extra on the other side', () => {
     const long = 'k'.repeat(5000)
     const r = compareMirror([{ id: long }, { id: 'b' }], [{ id: 'b' }])
