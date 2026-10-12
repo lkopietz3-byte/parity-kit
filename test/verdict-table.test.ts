@@ -2128,3 +2128,41 @@ describe('C3 / hostile-F11: an unreadable record id never produces a missing or 
     expect(r.status).toBe('flagged')
   })
 })
+
+describe('PF-3 / DR-2: reviewedField is always compared, even when fields is set', () => {
+  const canon = [{ id: 'x', v: 1, note: 'a', lastReviewed: '2026-06-08' }]
+
+  it('PF-3: a differing review value is flagged and appears in changed when fields is set', () => {
+    const mirror = [{ id: 'x', v: 1, note: 'b', lastReviewed: '2024-01-01' }]
+    const r = compareMirror(canon, mirror, { fields: ['v'], reviewedField: 'lastReviewed' })
+    expect(r.status).toBe('flagged')
+    expect(r.changed).toEqual([
+      { id: 'x', field: 'lastReviewed', change: 'different', canonical: '2026-06-08', mirror: '2024-01-01' },
+    ])
+    expect(r.stampHidesDrift).toEqual([])
+  })
+
+  it('PF-3: an unselected field other than the review field may still differ', () => {
+    const mirror = [{ id: 'x', v: 1, note: 'b', lastReviewed: '2026-06-08' }]
+    const r = compareMirror(canon, mirror, { fields: ['v'], reviewedField: 'lastReviewed' })
+    expect(r.status).toBe('ok')
+  })
+
+  it('PF-3: stampHidesDrift still works when fields is set and the review dates agree', () => {
+    const mirror = [{ id: 'x', v: 2, note: 'a', lastReviewed: '2026-06-08' }]
+    const r = compareMirror(canon, mirror, { fields: ['v'], reviewedField: 'lastReviewed' })
+    expect(r.stampHidesDrift).toEqual([{ id: 'x', reviewedValue: '2026-06-08', fields: ['v'] }])
+  })
+
+  it('PF-3: ignoreFields still removes the review field from the comparison', () => {
+    const mirror = [{ id: 'x', v: 1, note: 'a', lastReviewed: '2024-01-01' }]
+    const r = compareMirror(canon, mirror, { fields: ['v'], reviewedField: 'lastReviewed', ignoreFields: ['lastReviewed'] })
+    expect(r.changed).toEqual([])
+  })
+
+  it('PF-3: without fields the review field was already compared (control)', () => {
+    const mirror = [{ id: 'x', v: 1, note: 'a', lastReviewed: '2024-01-01' }]
+    const r = compareMirror(canon, mirror, { reviewedField: 'lastReviewed' })
+    expect(r.changed).toHaveLength(1)
+  })
+})

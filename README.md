@@ -124,7 +124,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | `key` | `"id"` | Field that identifies a record in an array. |
 | `fields` | every own enumerable field of either record | Compare only these fields. Must name at least one field, and at least one must not be in `ignoreFields`; an empty list, or a list that `ignoreFields` cancels entirely, throws `bad-options` because it would compare nothing and always pass. |
 | `ignoreFields` | none | Fields left out of the comparison. A name that appears in no record lands in `unknownFields`. |
-| `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. |
+| `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. It is always compared, even when `fields` does not list it, so a mirror with a different review date is never silent. `ignoreFields` can still remove it. |
 | `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this, plus a few units of binary rounding error (see How values are compared). |
 | `allowEmpty` | `false` | Let an empty canonical set pass. |
 | `foldCase` | `true` | Fold upper and lower case when looking for look-alike keys. |

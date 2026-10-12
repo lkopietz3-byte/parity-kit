@@ -22,7 +22,7 @@ import type { DuplicateKey, InvalidEntry, Key, Limits, SuspectKeyGroup } from '.
 export interface MirrorOptions {
   /** The field that identifies a record in an array. Default `"id"`. Ignored for ids taken from object keys. */
   key?: string;
-  /** Compare only these fields. Default: every own enumerable field of either record. Must name at least one field, and at least one must not be in `ignoreFields`. */
+  /** Compare only these fields (and `reviewedField`, which is always compared). Default: every own enumerable field of either record. Must name at least one field, and at least one must not be in `ignoreFields`. */
   fields?: readonly string[];
   /** Fields left out of the comparison. A name that appears in no record is reported in `unknownFields`. */
   ignoreFields?: readonly string[];
@@ -292,7 +292,8 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     compared += 1;
     const diffs: string[] = [];
     for (const field of sortedUnion(cf, mf)) {
-      if (only !== null && !only.has(field)) continue;
+      // The review field is compared even when `fields` does not list it, so a different review value is never silent.
+      if (only !== null && !only.has(field) && field !== reviewedField) continue;
       if (ignore.has(field)) {
         suppressed += 1;
         continue;

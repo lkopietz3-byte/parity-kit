@@ -166,3 +166,8 @@ Each has a verdict-table row named for its finding id.
   a throwing `id` getter used to be `flagged` with `missing: ['a']`; it is now `unknown` with the
   record in `invalid` (`unreadable`). If more ids are absent than there are unreadable records,
   the surplus is evidence and they are all still listed. Eight rows are new; no existing row changed.
+- `compareMirror` always compares `reviewedField`, even when `fields` does not list it (PF-3, DR-2).
+  The README already said a differing review value shows up in `changed`; with `fields` set it
+  was silently skipped, so a mirror with `lastReviewed: '2024-01-01'` against `'2026-06-08'` was
+  `ok`. It is now `flagged`. Other unlisted fields may still differ, and `ignoreFields` can still
+  remove the review field. Five rows are new; no existing row changed.
