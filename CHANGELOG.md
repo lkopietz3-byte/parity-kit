@@ -136,3 +136,9 @@ Each has a verdict-table row named for its finding id.
   different because of binary rounding. A tolerance of `0` is still exact. On a 29,997-item
   boundary corpus (cents, tenths, rounded mirrors) false fails went from several thousand to 0
   and false passes stayed at 0.
+- `findHandTypedConstants` registry (hostile-F6, DR-3): an entry key other than `id`, `value`
+  and `forms` now throws `ParityError('bad-registry')` and names the key, so `form` instead of
+  `forms` can no longer silently drop the forms list. An empty registry now throws
+  `bad-registry` instead of returning `[]`, so a registry file that failed to load cannot pass
+  as "no hand-typed copies". Empty text with a real registry still returns `[]`. One existing
+  row changed: `findHandTypedConstants('1.25', [])` used to be `[]` and now throws.

@@ -146,7 +146,7 @@ Returns:
 
 ### `findHandTypedConstants(text, registry)`
 
-Finds places where a registered constant is typed by hand, so the caller can import the value instead. The registry is `[{ id, value, forms? }]`.
+Finds places where a registered constant is typed by hand, so the caller can import the value instead. The registry is a non-empty array of `{ id, value, forms? }` entries, and an entry may carry no other key.
 
 Returns `[{ id, value, text, index, line, column, kind }]`, ordered by position. `index` is a 0-based UTF-16 offset, `line` and `column` are 1-based, and a column counts UTF-16 code units from the start of the line. `kind` is `number` (found by numeric value) or `form` (found as literal text).
 
@@ -236,7 +236,7 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 - If a number hit and a literal hit for the same constant overlap, the longer one is kept, and the number wins a tie. Nothing else is suppressed: two overlapping literal hits (`foo-bar` and `bar-baz` in `foo-bar-baz`) are both reported. The same text listed more than once, for one constant or several, is one pattern, so repeating it adds no work; each constant that lists it still gets its hit.
 - Scanning is linear in the length of the text for a fixed registry (an Aho-Corasick automaton for literal forms, one pass for numbers). Sorting the matches adds a log factor in the number of matches. Many heavily overlapping forms multiply the number of raw hits by the registry size.
 - Tiny integers are noisy. A registered `8` matches every standalone `8`. Prefer a `forms` entry with context such as `"8 points"`.
-- Registry mistakes throw `ParityError` with code `bad-registry`: duplicate ids, an empty id or form, a non-finite number, a value that is not a number or non-empty string, a hole in the array.
+- Registry mistakes throw `ParityError` with code `bad-registry`: duplicate ids, an empty id or form, a non-finite number, a value that is not a number or non-empty string, a hole in the array, an entry key other than `id`, `value` and `forms` (so `form` or `note` is refused and named, never silently dropped), and an empty registry (a registry file that failed to load must not look like "no hand-typed copies"). Empty text is fine and gives `[]`.
 - The registry file itself contains the value, so exclude it from the text you scan.
 
 ### Review stamps

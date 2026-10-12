@@ -592,9 +592,8 @@ describe('findHandTypedConstants: token boundaries', () => {
     expect(findHandTypedConstants('11.256 and 1.25.3 and v1.25 and 1.25', r).map((x) => x.index)).toEqual([32])
   })
 
-  it('finds nothing in empty text and nothing for an empty registry', () => {
+  it('finds nothing in empty text (an empty registry now throws, see DR-3)', () => {
     expect(findHandTypedConstants('', [{ id: 'a', value: 1 }])).toEqual([])
-    expect(findHandTypedConstants('1.25', [])).toEqual([])
   })
 
   it('handles lone surrogates in the text', () => {
@@ -1797,5 +1796,46 @@ describe('PF-6 / PK4-1: numberTolerance treats a decimal difference at the toler
   it('PF-6: nested numbers and arrays use the same rule', () => {
     const r = compareMirror([{ id: 'x', v: { p: [1.25] } }], [{ id: 'x', v: { p: [1.15] } }], { numberTolerance: 0.1 })
     expect(r.ok).toBe(true)
+  })
+})
+
+describe('hostile-F6 / DR-3: a registry cannot silently drop what it was given', () => {
+  const entry = (extra: Record<string, unknown>) => [{ id: 'x', value: 1.25, ...extra }]
+  it('F6: an entry with form instead of forms throws bad-registry naming form', () => {
+    expect(() => findHandTypedConstants('cost 1,25 EUR', entry({ form: ['1,25'] }) as never)).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code: 'bad-registry', message: expect.stringContaining('"form"') as string }) as Error,
+    )
+  })
+  it.each([['note'], ['valeu'], ['Forms'], ['values'], ['meta']])('F6: an unknown entry key %s throws bad-registry', (name) => {
+    expect(() => findHandTypedConstants('1.25', entry({ [name]: 'x' }) as never)).toThrowError(
+      expect.objectContaining({ code: 'bad-registry', message: expect.stringContaining(`"${name}"`) as string }) as Error,
+    )
+  })
+  it('F6: a misspelled value key is refused', () => {
+    expect(() => findHandTypedConstants('1.25', [{ id: 'x', valeu: 1.25 }] as never)).toThrowError(
+      expect.objectContaining({ code: 'bad-registry' }) as Error,
+    )
+  })
+  it('F6: a non-enumerable extra key is not read, an enumerable undefined one still counts as present', () => {
+    const hidden = { id: 'x', value: 1.25 }
+    Object.defineProperty(hidden, 'note', { value: 'x', enumerable: false })
+    expect(findHandTypedConstants('1.25', [hidden])).toHaveLength(1)
+    expect(() => findHandTypedConstants('1.25', entry({ note: undefined }) as never)).toThrowError(
+      expect.objectContaining({ code: 'bad-registry' }) as Error,
+    )
+  })
+  it('F6: a symbol key is not a typo and is ignored', () => {
+    expect(findHandTypedConstants('1.25', [{ id: 'x', value: 1.25, [Symbol('s')]: 1 }])).toHaveLength(1)
+  })
+  it('DR-3: an empty registry throws bad-registry, so hits.length === 0 cannot pass on a registry that failed to load', () => {
+    expect(() => findHandTypedConstants('1.25', [])).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code: 'bad-registry' }) as Error,
+    )
+  })
+  it('DR-3: empty text with a real registry is still a legitimate empty result', () => {
+    expect(findHandTypedConstants('', [{ id: 'x', value: 1.25 }])).toEqual([])
+  })
+  it('F6: id, value and forms are the whole entry shape and still work', () => {
+    expect(findHandTypedConstants('cost 1,25 EUR', entry({ forms: ['1,25'] }) as never)).toHaveLength(1)
   })
 })

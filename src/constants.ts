@@ -303,6 +303,11 @@ interface Entry {
   forms: string[];
 }
 
+/** A key name kept short enough to put in a message. */
+function shortName(name: string): string {
+  return name.length <= 40 ? name : `${name.slice(0, 40)}...`;
+}
+
 function readRegistry(registry: unknown): Entry[] {
   const bad = (message: string): never => {
     throw new ParityError('bad-registry', `findHandTypedConstants: ${message}`);
@@ -318,6 +323,9 @@ function readRegistry(registry: unknown): Entry[] {
   if (typeof length !== 'number' || !Number.isInteger(length) || length < 0 || length > 1_000_000) {
     return bad('the registry length is not readable or is over 1,000,000 entries');
   }
+  if (length === 0) {
+    return bad('the registry is empty; an empty registry checks nothing, so it is refused (a registry file that failed to load would otherwise pass)');
+  }
   const out: Entry[] = [];
   const ids = new Set<string>();
   try {
@@ -326,9 +334,23 @@ function readRegistry(registry: unknown): Entry[] {
       if (desc === undefined) return bad(`registry[${i}] is an empty slot`);
       const item: unknown = descriptorValue(registry as object, desc);
       if (!isPlainObject(item) || Array.isArray(item)) return bad(`registry[${i}] must be a plain object`);
-      const id = readOwn(item, 'id');
-      const value = readOwn(item, 'value');
-      const formsRaw = readOwn(item, 'forms');
+      // One descriptor read per own property. The three known names are used
+      // wherever they are; any other enumerable string key is a refusal, so a
+      // misspelled `forms` can never silently drop the forms.
+      let id: unknown;
+      let value: unknown;
+      let formsRaw: unknown;
+      for (const name of Reflect.ownKeys(item)) {
+        if (typeof name !== 'string') continue;
+        const desc = Reflect.getOwnPropertyDescriptor(item, name);
+        if (desc === undefined) continue;
+        if (name === 'id') id = descriptorValue(item, desc);
+        else if (name === 'value') value = descriptorValue(item, desc);
+        else if (name === 'forms') formsRaw = descriptorValue(item, desc);
+        else if (desc.enumerable === true) {
+          return bad(`registry[${i}] has an unknown key ${JSON.stringify(shortName(name))}; an entry has only id, value and forms`);
+        }
+      }
       if (typeof id !== 'string' || id === '') return bad(`registry[${i}].id must be a non-empty string`);
       if (ids.has(id)) return bad(`registry has two entries with id "${id}"`);
       ids.add(id);
