@@ -121,7 +121,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | `fields` | every own enumerable field of either record | Compare only these fields. |
 | `ignoreFields` | none | Fields left out of the comparison. |
 | `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. |
-| `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this. |
+| `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this, plus a few units of binary rounding error (see How values are compared). |
 | `allowEmpty` | `false` | Let an empty canonical set pass. |
 | `foldCase` | `true` | Fold upper and lower case when looking for look-alike keys. |
 | `limits` | see Limits | `maxRecords`, `maxNodes`, `maxDepth`, `maxKeyLength`. |
@@ -205,7 +205,7 @@ Returns `ok`, `status`, `compared`, and:
 
 - Strings are compared exactly: NFC and NFD differ, a trailing space differs, a zero-width character differs.
 - Types are strict: `1.25` and `"1.25"` differ, `1` and `1n` differ, `null` and `0` differ.
-- Numbers: `0` equals `-0`. `NaN` equals `NaN`. With `numberTolerance`, two finite numbers are equal when `|a - b| <= tolerance`. Infinities are equal only to the same infinity. Without a tolerance the comparison is exact, so `1.25` and `1.0000001` differ.
+- Numbers: `0` equals `-0`. `NaN` equals `NaN`. With `numberTolerance`, two finite numbers are equal when `|a - b| <= tolerance + 8 * Number.EPSILON * max(|a|, |b|, tolerance)`. The second term is a few units of binary rounding error, so a difference that is exactly the tolerance in decimal (`1.25` and `1.15` at `0.1`) is equal, while a real extra cent or tenth is still different. It is not added when `numberTolerance` is `0`. Infinities are equal only to the same infinity. Without a tolerance the comparison is exact, so `1.25` and `1.0000001` differ.
 - Dates compare by time value. Two invalid Dates are equal.
 - Arrays compare in order. Objects compare by their sorted keys, so key order does not matter.
 - A field present in only one copy is reported as `missing-in-mirror` or `extra-in-mirror`.

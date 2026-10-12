@@ -277,9 +277,28 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
 }
 
 /**
+ * Two finite numbers are within `tolerance` when `|a - b| <= tolerance + 8 * EPSILON * max(|a|, |b|, tolerance)`.
+ * The second term is a few units of rounding error at the size of the numbers.
+ * Without it a difference that is exactly the tolerance in decimal (1.25 and
+ * 1.15 at 0.1) lands a hair over it in binary and is called different. It is
+ * far smaller than any real decimal step at the same size (a cent at a million
+ * dollars is ten million times larger), so nothing that is really over the
+ * tolerance is let through. No clock and no randomness: the same inputs give
+ * the same answer.
+ */
+function withinTolerance(a: number, b: number, tolerance: number): boolean {
+  const diff = Math.abs(a - b);
+  if (!Number.isFinite(diff)) return false;
+  if (diff <= tolerance) return true;
+  const scale = Math.max(Math.abs(a), Math.abs(b), tolerance);
+  return diff <= tolerance + 8 * Number.EPSILON * scale;
+}
+
+/**
  * Structural equality of two snapshots. Numbers: `-0` equals `0`, `NaN`
  * equals `NaN`, and with a tolerance two finite numbers are equal when they
- * differ by at most the tolerance. Dates compare by time value (two invalid
+ * differ by at most the tolerance (plus the rounding allowance in
+ * `withinTolerance`). Dates compare by time value (two invalid
  * Dates are equal). A string never equals a number.
  */
 export function snapEqual(a: Snap, b: Snap, tolerance: number): boolean {
@@ -287,7 +306,7 @@ export function snapEqual(a: Snap, b: Snap, tolerance: number): boolean {
   if (typeof a === 'number') {
     if (typeof b !== 'number') return false;
     if (a !== a) return b !== b;
-    return tolerance > 0 && Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tolerance;
+    return tolerance > 0 && Number.isFinite(a) && Number.isFinite(b) && withinTolerance(a, b, tolerance);
   }
   if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return false;
   if (a instanceof DateSnap) return b instanceof DateSnap && (a.time === b.time || (a.time !== a.time && b.time !== b.time));

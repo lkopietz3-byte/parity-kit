@@ -1725,3 +1725,77 @@ describe('README gate for evidenced bulk bumps waives only the bulk bump', () =>
     expect(acceptEvidencedBulk(audit([...before, rec('bad')], after))).toBe(false)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Release 0.1.0 must fixes. Each row names its round 1 finding.
+// ---------------------------------------------------------------------------
+
+describe('PF-6 / PK4-1: numberTolerance treats a decimal difference at the tolerance as equal', () => {
+  const eq = (a: number, b: number, tol: number) =>
+    compareMirror([{ id: 'x', v: a }], [{ id: 'x', v: b }], { numberTolerance: tol }).ok
+
+  it('PF-6: the README example 1.25 vs 1.15 at 0.1 is equal', () => {
+    expect(eq(1.25, 1.15, 0.1)).toBe(true)
+  })
+  it('PF-6: 1.2 vs 1.3 at 0.1 is equal', () => {
+    expect(eq(1.2, 1.3, 0.1)).toBe(true)
+  })
+  it('PF-6: 0.03 vs 0.04 at 0.01 is equal', () => {
+    expect(eq(0.03, 0.04, 0.01)).toBe(true)
+  })
+  it('PF-6: 1.25 vs 1.1499999 at 0.1 is flagged', () => {
+    expect(eq(1.25, 1.1499999, 0.1)).toBe(false)
+  })
+  it('PF-6: a difference just over the tolerance is flagged', () => {
+    expect(eq(1.25, 1.14, 0.1)).toBe(false)
+    expect(eq(0.03, 0.0401, 0.01)).toBe(false)
+    expect(eq(1, 1 + 1e-9, 1e-10)).toBe(false)
+  })
+  it('PF-6: a zero tolerance stays exact', () => {
+    expect(eq(0.1 + 0.2, 0.3, 0)).toBe(false)
+    expect(eq(1.25, 1.25, 0)).toBe(true)
+  })
+
+  // Decimal oracle: the decision is made on integers (hundredths, tenths,
+  // thousandths), so it is exact. The kit must agree with it on both sides
+  // of the boundary, for positive and negative values, at several scales.
+  const scales: Array<[string, number, number]> = [
+    ['cents', 100, 0],
+    ['tenths', 10, 0],
+    ['thousandths', 1000, 0],
+    ['cents near a million', 100, 1_000_000],
+    ['cents below zero', 100, -2000],
+  ]
+  it.each(scales)('PF-6: no false fail and no false pass in %s', (_name, per, offset) => {
+    let falseFail = 0
+    let falsePass = 0
+    let total = 0
+    for (const tolInt of [1, 2, 5, 10, 25]) {
+      const tol = tolInt / per
+      for (let k = 0; k <= 400; k += 1) {
+        const aInt = offset * per + k
+        for (const delta of [tolInt, tolInt + 1, tolInt - 1, -tolInt, -(tolInt + 1)]) {
+          const bInt = aInt + delta
+          const truth = Math.abs(delta) <= tolInt
+          const got = eq(aInt / per, bInt / per, tol)
+          total += 1
+          if (truth && !got) falseFail += 1
+          if (!truth && got) falsePass += 1
+        }
+      }
+    }
+    expect(total).toBeGreaterThan(9000)
+    expect({ falseFail, falsePass }).toEqual({ falseFail: 0, falsePass: 0 })
+  })
+
+  it('PF-6: infinities and NaN keep their rules under a tolerance', () => {
+    expect(eq(Infinity, 1e308, 1e308)).toBe(false)
+    expect(eq(Infinity, Infinity, 0.1)).toBe(true)
+    expect(eq(NaN, NaN, 0.1)).toBe(true)
+    expect(eq(NaN, 1, 0.1)).toBe(false)
+  })
+  it('PF-6: nested numbers and arrays use the same rule', () => {
+    const r = compareMirror([{ id: 'x', v: { p: [1.25] } }], [{ id: 'x', v: { p: [1.15] } }], { numberTolerance: 0.1 })
+    expect(r.ok).toBe(true)
+  })
+})

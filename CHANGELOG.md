@@ -124,3 +124,15 @@ None. This is the first version, so there is nothing to migrate from.
 - Changed rows: three existing rows that selected field names present in no record
   (`fields: ['rate']`, twenty `f0..f19` names) now report those names as `unknownFields`
   instead of passing.
+
+### Changed before release (audit round 1)
+
+These change a verdict or a result shape before the first release, so nothing is migrated.
+Each has a verdict-table row named for its finding id.
+
+- `numberTolerance` (PF-6): two finite numbers are equal when
+  `|a - b| <= tolerance + 8 * Number.EPSILON * max(|a|, |b|, tolerance)`. A decimal difference
+  that is exactly the tolerance (`1.25` vs `1.15` at `0.1`) is now equal; it was called
+  different because of binary rounding. A tolerance of `0` is still exact. On a 29,997-item
+  boundary corpus (cents, tenths, rounded mirrors) false fails went from several thousand to 0
+  and false passes stayed at 0.
