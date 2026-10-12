@@ -22,9 +22,9 @@ import type { DuplicateKey, InvalidEntry, Key, Limits, SuspectKeyGroup } from '.
 export interface MirrorOptions {
   /** The field that identifies a record in an array. Default `"id"`. Ignored for ids taken from object keys. */
   key?: string;
-  /** Compare only these fields. Default: every own enumerable field of either record. */
+  /** Compare only these fields. Default: every own enumerable field of either record. Must name at least one field, and at least one must not be in `ignoreFields`. */
   fields?: readonly string[];
-  /** Fields left out of the comparison. */
+  /** Fields left out of the comparison. A name that appears in no record is reported in `unknownFields`. */
   ignoreFields?: readonly string[];
   /** The field that holds the review date. Enables `stampHidesDrift`. */
   reviewedField?: string;
@@ -65,6 +65,12 @@ export interface MirrorResult {
   status: Status;
   /** Records present once on both sides and compared field by field. */
   compared: number;
+  /**
+   * True when records were matched but no field of any of them was compared
+   * because `ignoreFields` removed every field they carry. Nothing was checked,
+   * so the result is `unknown`, never `ok`.
+   */
+  noFieldsCompared: boolean;
   /** Keys in the canonical set that the mirror lacks. */
   missing: Key[];
   /** Keys in the mirror that the canonical set lacks. */
@@ -73,9 +79,9 @@ export interface MirrorResult {
   stampHidesDrift: StampHidesDrift[];
   duplicateKeys: DuplicateKey[];
   /**
-   * Selected names (`fields`, `reviewedField`) that appear in no readable record on
-   * either side, in the order they were given. A misspelled name lands here; nothing
-   * was compared for it, so the result is never `ok`.
+   * Selected or ignored names (`fields`, `reviewedField`, `ignoreFields`) that appear in
+   * no readable record on either side, in the order they were given. A misspelled name
+   * lands here, so the result is never `ok`.
    */
   unknownFields: string[];
   /** Look-alike keys. Reported, never merged. */
@@ -216,6 +222,16 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
   const key = optString(o, 'key', WHAT) ?? 'id';
   const fields = optNames(o, 'fields', WHAT);
   const ignoreFields = optNames(o, 'ignoreFields', WHAT) ?? [];
+  if (fields !== undefined) {
+    // An empty selection (for example Object.keys of an empty schema) would compare nothing and pass.
+    if (fields.length === 0) {
+      throw new ParityError('bad-options', `${WHAT}: option "fields" must name at least one field`);
+    }
+    const ignored = new Set(ignoreFields);
+    if (fields.every((name) => ignored.has(name))) {
+      throw new ParityError('bad-options', `${WHAT}: every field in "fields" is also in "ignoreFields", so nothing would be compared`);
+    }
+  }
   const reviewedField = optString(o, 'reviewedField', WHAT);
   const tolerance = readTolerance(o, WHAT);
   const allowEmpty = optBoolean(o, 'allowEmpty', WHAT) ?? false;
@@ -224,8 +240,11 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
 
   let names: string[] | null = null;
   if (fields !== undefined) {
-    names = [...fields];
-    if (reviewedField !== undefined && !names.includes(reviewedField)) names.push(reviewedField);
+    // Ignored names are read too (and then left out) so a misspelled one can be reported.
+    const set = new Set<string>(fields);
+    if (reviewedField !== undefined) set.add(reviewedField);
+    for (const name of ignoreFields) set.add(name);
+    names = [...set];
   }
   const cfg = { key, names, includeKey: reviewedField === key || (fields?.includes(key) ?? false) };
   const c = readDataset(canonical, 'canonical', cfg, budget);
@@ -242,6 +261,8 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
   const changed: ChangedField[] = [];
   const stampHidesDrift: StampHidesDrift[] = [];
   let compared = 0;
+  let examined = 0;
+  let suppressed = 0;
 
   for (const id of ci.order) if (!mi.byId.has(id)) missing.push(id);
   for (const id of mi.order) if (!ci.byId.has(id)) extra.push(id);
@@ -258,7 +279,12 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     compared += 1;
     const diffs: string[] = [];
     for (const field of sortedUnion(cf, mf)) {
-      if (ignore.has(field) || (only !== null && !only.has(field))) continue;
+      if (only !== null && !only.has(field)) continue;
+      if (ignore.has(field)) {
+        suppressed += 1;
+        continue;
+      }
+      examined += 1;
       const a = cf.get(field);
       const b = mf.get(field);
       const inC = cf.has(field);
@@ -292,17 +318,20 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
 
   const unknownFields = findUnknownFields(
     [c.entries, m.entries],
-    [...(fields ?? []), ...(reviewedField === undefined ? [] : [reviewedField])],
+    [...new Set([...(fields ?? []), ...(reviewedField === undefined ? [] : [reviewedField]), ...ignoreFields])],
     key,
   );
+  // Records were matched, every field they carry was ignored: nothing was checked.
+  const noFieldsCompared = compared > 0 && examined === 0 && suppressed > 0;
   const flagged =
     missing.length + extra.length + changed.length + stampHidesDrift.length + duplicateKeys.length > 0;
-  const unknown = invalid.length + suspectKeys.length + unknownFields.length > 0;
+  const unknown = invalid.length + suspectKeys.length + unknownFields.length > 0 || noFieldsCompared;
   const status: Status = flagged ? 'flagged' : unknown ? 'unknown' : 'ok';
   return {
     ok: status === 'ok',
     status,
     compared,
+    noFieldsCompared,
     missing,
     extra,
     changed,

@@ -58,6 +58,7 @@ if (!result.ok) {
   "ok": false,
   "status": "flagged",
   "compared": 2,
+  "noFieldsCompared": false,
   "missing": ["bilt"],
   "extra": ["cap-one"],
   "changed": [
@@ -103,9 +104,12 @@ const audit = auditReviewStamps(oldSnapshot, newSnapshot, {
   reviewedField: 'lastReviewed',
   sourceFields: ['source'],
   now: '2026-10-10T12:00:00Z', // optional; future dates are only checked when you pass it
+  ignoreFields: ['updatedAt'], // see the note below
 });
 // audit.stampOnly, audit.bulkBump, audit.future, audit.backward, audit.unknown, ...
 ```
+
+If a field changes by itself whenever a record is touched (`updatedAt`, a version counter), list it in `ignoreFields`. Otherwise it counts as evidence of a recheck and hides a stamp-only bump. A name in `ignoreFields` that matches no record is reported in `unknownFields` and the audit is `unknown`, so a typo cannot quietly turn the exclusion off.
 
 ## The exports
 
@@ -118,8 +122,8 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `key` | `"id"` | Field that identifies a record in an array. |
-| `fields` | every own enumerable field of either record | Compare only these fields. |
-| `ignoreFields` | none | Fields left out of the comparison. |
+| `fields` | every own enumerable field of either record | Compare only these fields. Must name at least one field, and at least one must not be in `ignoreFields`; an empty list, or a list that `ignoreFields` cancels entirely, throws `bad-options` because it would compare nothing and always pass. |
+| `ignoreFields` | none | Fields left out of the comparison. A name that appears in no record lands in `unknownFields`. |
 | `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. |
 | `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this, plus a few units of binary rounding error (see How values are compared). |
 | `allowEmpty` | `false` | Let an empty canonical set pass. |
@@ -133,16 +137,17 @@ Returns:
 | `ok` | `true` only when every list below is empty. |
 | `status` | `flagged` (positive evidence of drift), `unknown` (nothing flagged, but something could not be checked), or `ok`. |
 | `compared` | Records present once on both sides and compared field by field. |
+| `noFieldsCompared` | `true` when records were matched but `ignoreFields` removed every field they carry, so no field was checked. The result is `unknown`, never `ok`. Records that carry only an id are an honest presence check and do not set it. |
 | `missing` | Keys in the canonical set that the mirror lacks. |
 | `extra` | Keys in the mirror that the canonical set lacks. |
 | `changed` | `{ id, field, change, canonical, mirror }`. `change` is `different`, `missing-in-mirror` or `extra-in-mirror`. |
 | `stampHidesDrift` | `{ id, reviewedValue, fields }` when both copies carry the same review date but other fields differ. |
 | `duplicateKeys` | `{ side, id, positions }` for a key used by more than one record on one side. Those records are not compared. |
-| `unknownFields` | Names you selected (`fields`, `reviewedField`) that appear in no readable record on either side. A misspelled name lands here, nothing was compared for it, and the result is never `ok`. |
+| `unknownFields` | Names you selected or ignored (`fields`, `reviewedField`, `ignoreFields`) that appear in no readable record on either side. A misspelled name lands here and the result is never `ok`. |
 | `suspectKeys` | `{ skeleton, keys: [{ side, key }] }` for keys that look alike but are not identical. |
 | `invalid` | Records (or a whole dataset) that could not be read, with a reason. |
 
-`status` is `flagged` when `missing`, `extra`, `changed`, `stampHidesDrift` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
+`status` is `flagged` when `missing`, `extra`, `changed`, `stampHidesDrift` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `noFieldsCompared` is `true` or `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
 
 ### `findHandTypedConstants(text, registry)`
 
@@ -161,7 +166,7 @@ Compares two snapshots of the same dataset.
 | `reviewerField` | none | Who reviewed. A change counts as evidence. |
 | `expiryField` | none | A deadline field. Turns on `extendedDeadlines`. |
 | `valueFields` | every field | Which fields count as values. Source and reviewer fields always count. |
-| `ignoreFields` | none | Fields that never count as evidence, such as an automatic `updatedAt`. |
+| `ignoreFields` | none | Fields that never count as evidence, such as an automatic `updatedAt`. A name that appears in no record lands in `unknownFields`. |
 | `now` | none | A `Date`, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone. Without it, future dates are not checked and no clock is read. |
 | `bulkThreshold` | `10` | A bulk bump is more than this many records moving to one new day. |
 | `key`, `allowEmpty`, `foldCase`, `limits` | as above | |
@@ -178,7 +183,7 @@ Returns `ok`, `status`, `compared`, and:
 | `extendedDeadlines` | `{ id, from, to }`: the expiry moved later and no source field changed. |
 | `unknown` | `{ id, side, field, reason, value? }`: a date that cannot be judged. Never a pass. |
 | `unknownSummary` | `unknown` counted per `{ field, reason, count }`, so thousands of entries can be read at a glance. |
-| `unknownFields` | Configured names (`reviewedField`, `sourceFields`, `reviewerField`, `expiryField`, `valueFields`) that appear in no readable record in either snapshot. A misspelled name lands here and the result is never `ok`. |
+| `unknownFields` | Configured names (`reviewedField`, `sourceFields`, `reviewerField`, `expiryField`, `valueFields`, `ignoreFields`) that appear in no readable record in either snapshot. A misspelled name lands here and the result is never `ok`. |
 | `added`, `removed` | Keys only in `after` or only in `before`. Informational. |
 | `duplicateKeys`, `suspectKeys`, `invalid` | As in `compareMirror`. |
 
@@ -319,7 +324,7 @@ Reading is iterative over records and bounded by these limits, so a 100,000-leve
 - **It does not prove a human rechecked anything.** It flags stamps that moved with no evidence of a recheck in the data. A stamp that moved alongside a changed value passes, even if the change was cosmetic or made by a script. A reviewer name that changes counts as evidence even if nobody reviewed.
 - **It does not check that a value is true or current.** It checks that copies agree and that dates moved for a visible reason.
 - It does not report a value that changed while its review date did not move. That is a different question.
-- `ignoreFields` names are not checked: an ignored name that matches nothing is harmless, so a typo there fails safe (the field is compared).
+- It cannot tell that a field you did not name should have been ignored. In the audit, a field that changes on every edit by itself (`updatedAt`, a version counter, an ETag) counts as evidence of a recheck unless you list it in `ignoreFields`, so such a field makes a stamp-only bump look earned. A misspelled `ignoreFields` name is reported in `unknownFields`, and the audit is then `unknown`, never `ok`.
 - It does not read files, call APIs, parse CSV or YAML, or schedule anything. You load the data and pass it in.
 - It compares JSON-shaped data. Class instances, `Map`, `Set`, functions and symbols are reported as invalid, not converted.
 - It cannot tell a built-in with a replaced prototype and its own enumerable properties from a plain object (see "What is read").

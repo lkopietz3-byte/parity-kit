@@ -29,6 +29,18 @@ imports a `node:` module, so it is browser-safe.
   throws `ParityError` (with a `code`). A bad record becomes an `invalid` entry
   and the rest are still compared. A record whose key can be read keeps its
   identity, so it is never reported as `missing`.
+- **A run that checked nothing is never `ok`.** What is wrong with the options
+  alone throws: `fields: []`, or a `fields` list that `ignoreFields` cancels
+  entirely, is `bad-options`. What depends on the data is reported, not thrown
+  (the same call can be fine on other data): when `ignoreFields` removes every
+  field of every matched record, `compareMirror` is `unknown` with
+  `noFieldsCompared`; when both audit snapshots have keyed records and share no
+  key, `auditReviewStamps` is `unknown` with `noOverlap`. Records that carry
+  only an id are an honest presence check and stay `ok`. A name given in
+  `ignoreFields` is checked like any other configured name (`unknownFields`),
+  because ignoring less means more fields count as evidence in the audit: a typo
+  there fails open. Registry entries accept only `id`, `value` and `forms`, and a
+  registry must not be empty, for the same reason.
 - **Read once, then compare.** A record is read into a snapshot: own enumerable
   string-keyed properties only (or the named own properties), data values
   taken from the descriptor and getters run exactly once, keys sorted so a
@@ -82,7 +94,9 @@ imports a `node:` module, so it is browser-safe.
   regular expressions run on single characters or short field names.
 - **Numbers are exact unless told otherwise.** `-0` equals `0`, `NaN` equals
   `NaN`, a tolerance applies only to finite numbers, a string never equals a
-  number.
+  number. A tolerance above zero allows `8 * EPSILON * max(|a|, |b|, tolerance)`
+  on top of itself, so a difference that is exactly the tolerance in decimal is
+  equal; at tolerance `0` nothing is added.
 - **No clock.** `now` is an argument. Without it, future dates are not judged
   and nothing reads the time. A bare date gets a 14-hour future grace (UTC+14
   is the furthest-ahead civil offset); an explicit-offset timestamp gets none.

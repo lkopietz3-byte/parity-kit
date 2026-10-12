@@ -1586,9 +1586,11 @@ describe('compareMirror: a selected name that appears in no record is reported, 
     expect(compareMirror([], [], { allowEmpty: true, fields: ['v'], reviewedField: 'seen' }).unknownFields).toEqual([])
   })
 
-  it('an ignored name that matches nothing is harmless and silent (documented)', () => {
+  it('an ignored name that matches nothing is reported (PF-1; it was silent before 0.1.0)', () => {
     const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { ignoreFields: ['vv'] })
-    expect(r.ok).toBe(true)
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.unknownFields).toEqual(['vv'])
   })
 
   it('honest results carry an empty list', () => {
@@ -1931,5 +1933,126 @@ describe('PF-4 / hostile-F1: an audit that compared nothing is unknown, never ok
         a.extendedDeadlines.length === 0 && a.unknown.length === 0 && a.unknownFields.length === 0 &&
         a.duplicateKeys.length === 0 && a.suspectKeys.length === 0 && a.invalid.length === 0)
     expect(accept(auditReviewStamps(stamped(25), stamped(25, (id) => `${id}-v2`, '2026-10-10'), opts))).toBe(false)
+  })
+})
+
+describe('PF-2 / hostile-F2: an empty effective field selection is refused', () => {
+  const canon = [{ id: 'x', baselineCpp: 1.25 }]
+  const mirror = [{ id: 'x', baselineCpp: 1.0 }]
+  const badOptions: Array<[string, MirrorOptions]> = [
+    ['fields: []', { fields: [] }],
+    ['fields: [] with a review field', { fields: [], reviewedField: 'baselineCpp' }],
+    ['every field also ignored', { fields: ['baselineCpp'], ignoreFields: ['baselineCpp'] }],
+    ['two fields both ignored', { fields: ['a', 'b'], ignoreFields: ['b', 'a'] }],
+  ]
+  it.each(badOptions)('PF-2: %s throws bad-options', (_name, options) => {
+    expect(() => compareMirror(canon, mirror, options)).toThrowError(
+      expect.objectContaining({ name: 'ParityError', code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('PF-2: fields partly ignored still compares the rest', () => {
+    const same = compareMirror([{ id: 'x', a: 1, b: 1 }], [{ id: 'x', a: 1, b: 2 }], { fields: ['a', 'b'], ignoreFields: ['b'] })
+    expect(same.status).toBe('ok')
+    const drift = compareMirror([{ id: 'x', a: 1, b: 1 }], [{ id: 'x', a: 2, b: 2 }], { fields: ['a', 'b'], ignoreFields: ['b'] })
+    expect(drift.status).toBe('flagged')
+  })
+
+  it('PF-2: ignoreFields that remove every field of every record is unknown, not ok (hostile-F2 repro)', () => {
+    const r = compareMirror(canon, mirror, { ignoreFields: ['baselineCpp'] })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.compared).toBe(1)
+    expect(r.noFieldsCompared).toBe(true)
+  })
+
+  it('PF-2: ignoring every field of a two-field record is unknown', () => {
+    const r = compareMirror(
+      [{ id: 'x', baselineCpp: 1.25, lastReviewed: '2026-06-08' }],
+      [{ id: 'x', baselineCpp: 1.0, lastReviewed: '2026-06-08' }],
+      { ignoreFields: ['baselineCpp', 'lastReviewed'] },
+    )
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.noFieldsCompared).toBe(true)
+  })
+
+  it('PF-2: the hostile-F2 repro never returns ok:true under any of these configs', () => {
+    const configs: MirrorOptions[] = [
+      {}, { ignoreFields: ['baselineCpp'] }, { fields: ['baselineCpp'] }, { fields: ['nope'] },
+      { numberTolerance: 0.1 }, { numberTolerance: 0.01 },
+    ]
+    for (const options of configs) {
+      const r = compareMirror(canon, mirror, options)
+      expect(r.ok, JSON.stringify(options)).toBe(false)
+    }
+  })
+
+  it('PF-2: records that carry only an id are an honest presence check and stay ok', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'b' }], [{ id: 'a' }, { id: 'b' }])
+    expect(r.status).toBe('ok')
+    expect(r.noFieldsCompared).toBe(false)
+  })
+
+  it('PF-2: ignoring one field while another is compared is not the empty case', () => {
+    const r = compareMirror([{ id: 'x', a: 1, note: 'x' }], [{ id: 'x', a: 1, note: 'y' }], { ignoreFields: ['note'] })
+    expect(r.status).toBe('ok')
+    expect(r.noFieldsCompared).toBe(false)
+  })
+})
+
+describe('PF-1: ignoreFields names are checked', () => {
+  const before = [{ id: 'a', lastReviewed: '2026-01-01', price: 5, source: 'u', updatedAt: '2026-01-01T00:00:00Z' }]
+  const after = [{ id: 'a', lastReviewed: '2026-06-01', price: 5, source: 'u', updatedAt: '2026-06-01T00:00:00Z' }]
+  const run = (ignoreFields: string[], extra: Partial<StampOptions> = {}) =>
+    auditReviewStamps(before, after, { reviewedField: 'lastReviewed', sourceFields: ['source'], ignoreFields, ...extra })
+
+  it('PF-1: ignoreFields [updatedAt] flags the stamp-only bump', () => {
+    const r = run(['updatedAt'])
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toHaveLength(1)
+    expect(r.unknownFields).toEqual([])
+  })
+
+  it.each([['updatedat'], ['updated_at'], ['UpdatedAt']])('PF-1: the typo %s is unknown, never ok', (typo) => {
+    const r = run([typo])
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.unknownFields).toEqual([typo])
+  })
+
+  it('PF-1: a typo among valid names is still reported', () => {
+    const r = run(['updatedAt', 'nope'])
+    expect(r.unknownFields).toEqual(['nope'])
+    expect(r.stampOnly).toHaveLength(1)
+  })
+
+  it('PF-1: under valueFields a typo in ignoreFields is reported, a real name outside valueFields is not', () => {
+    expect(run(['updatedat'], { valueFields: ['price', 'updatedAt'] }).unknownFields).toEqual(['updatedat'])
+    const real = run(['updatedAt'], { valueFields: ['price'] })
+    expect(real.unknownFields).toEqual([])
+    expect(real.stampOnly).toHaveLength(1)
+  })
+
+  it('PF-1: compareMirror also reports an ignoreFields name that matches no field', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { ignoreFields: ['note'] })
+    expect(r.unknownFields).toEqual(['note'])
+    expect(r.status).toBe('unknown')
+    expect(r.ok).toBe(false)
+  })
+
+  it('PF-1: compareMirror does not report an ignoreFields name that one record has', () => {
+    const r = compareMirror(
+      [{ id: 'a', v: 1, note: 'x' }, { id: 'b', v: 1 }],
+      [{ id: 'a', v: 1 }, { id: 'b', v: 1 }],
+      { ignoreFields: ['note'] },
+    )
+    expect(r.unknownFields).toEqual([])
+    expect(r.status).toBe('ok')
+  })
+
+  it('PF-1: compareMirror reports an ignoreFields typo even when fields restricts the read', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v'], ignoreFields: ['nope'] })
+    expect(r.unknownFields).toEqual(['nope'])
   })
 })

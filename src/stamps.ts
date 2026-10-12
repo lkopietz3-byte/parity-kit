@@ -129,8 +129,9 @@ export interface StampAudit {
   unknownSummary: UnknownSummary[];
   /**
    * Configured names (`reviewedField`, `sourceFields`, `reviewerField`, `expiryField`,
-   * `valueFields`) that appear in no readable record in either snapshot, in the order
-   * given. A misspelled name lands here and the result is never `ok`.
+   * `valueFields`, `ignoreFields`) that appear in no readable record in either snapshot,
+   * in the order given. A misspelled name lands here and the result is never `ok`. A typo in
+   * `ignoreFields` matters most: the field it should have excluded would count as evidence.
    */
   unknownFields: string[];
   /** Keys only in the `after` snapshot. Informational. */
@@ -227,7 +228,8 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
 
   let names: string[] | null = null;
   if (valueFields !== undefined) {
-    const set = new Set<string>([...valueFields, ...sourceFields, reviewedField]);
+    // Ignored names are read too (and then left out) so a misspelled one can be reported.
+    const set = new Set<string>([...valueFields, ...sourceFields, reviewedField, ...ignoreFields]);
     if (reviewerField !== undefined) set.add(reviewerField);
     if (expiryField !== undefined) set.add(expiryField);
     names = [...set];
@@ -364,7 +366,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
   const unknownSummary = [...summaryCounts.values()];
   const unknownFields = findUnknownFields(
     [b.entries, a.entries],
-    [...new Set([reviewedField, ...sourceFields, ...(reviewerField === undefined ? [] : [reviewerField]), ...(expiryField === undefined ? [] : [expiryField]), ...(valueFields ?? [])])],
+    [...new Set([reviewedField, ...sourceFields, ...(reviewerField === undefined ? [] : [reviewerField]), ...(expiryField === undefined ? [] : [expiryField]), ...(valueFields ?? []), ...ignoreFields])],
     key,
   );
   const suspectKeys = findSuspectKeys(

@@ -148,3 +148,16 @@ Each has a verdict-table row named for its finding id.
   The same ids with the same bump are still `flagged`, and two empty snapshots with `allowEmpty`
   are still `ok`. The result type gains one boolean field. The README gate recipe for evidenced
   bulk bumps now also requires `!a.noOverlap`.
+- `compareMirror` refuses an empty effective field selection (PF-2, hostile-F2). `fields: []`
+  and a `fields` list that `ignoreFields` cancels entirely throw `ParityError('bad-options')`.
+  With no `fields`, when `ignoreFields` removes every field of every matched record, the result
+  is `unknown` with `noFieldsCompared: true` (this depends on the data, so it is reported, not
+  thrown; records that carry only an id still pass as a presence check). Before, both gave
+  `ok: true` on data that really differed. The result type gains one boolean field.
+- `ignoreFields` names are checked (PF-1). In `auditReviewStamps` a name that matches no record
+  lands in `unknownFields` and the audit is `unknown`; before, a typo such as `updatedat` let an
+  auto-touched `updatedAt` count as evidence and an unearned bump passed as `ok`. The README line
+  saying such a typo "fails safe" was wrong for the audit and is removed. `compareMirror` reports
+  the same names in `unknownFields` for consistency (one existing row changed: an ignored name
+  that matches nothing used to be `ok` and is now `unknown`). Names in `ignoreFields` are read
+  when `fields` or `valueFields` narrows the read, so they can be checked.

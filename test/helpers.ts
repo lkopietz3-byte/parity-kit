@@ -30,6 +30,7 @@ export function emptyMirror(): Omit<MirrorResult, 'compared'> {
   return {
     ok: true,
     status: 'ok',
+    noFieldsCompared: false,
     missing: [],
     extra: [],
     changed: [],
