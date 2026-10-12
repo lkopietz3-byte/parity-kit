@@ -2056,3 +2056,75 @@ describe('PF-1: ignoreFields names are checked', () => {
     expect(r.unknownFields).toEqual(['nope'])
   })
 })
+
+describe('C3 / hostile-F11: an unreadable record id never produces a missing or extra claim', () => {
+  const unreadable = (): Record<string, unknown> => ({
+    get id(): string {
+      throw new Error('boom')
+    },
+    v: 1,
+  })
+
+  it('C3: an unreadable mirror id leaves the canonical record unknown, not missing', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [unreadable()])
+    expect(r.missing).toEqual([])
+    expect(r.extra).toEqual([])
+    expect(r.status).toBe('unknown')
+    expect(r.ok).toBe(false)
+    expect(r.invalid.map((i) => i.reason)).toEqual(['unreadable'])
+  })
+
+  it('C3: an unreadable canonical id leaves the mirror record unknown, not extra (hostile-F11 repro)', () => {
+    const r = compareMirror([unreadable()], [{ id: 'a', v: 1 }])
+    expect(r.extra).toEqual([])
+    expect(r.missing).toEqual([])
+    expect(r.status).toBe('unknown')
+    expect(r.invalid.map((i) => i.reason)).toEqual(['unreadable'])
+  })
+
+  it('C3: a Proxy whose descriptor trap throws on the key behaves the same', () => {
+    const hostile = new Proxy({ id: 'a', v: 1 }, {
+      getOwnPropertyDescriptor(target, name) {
+        if (name === 'id') throw new Error('trap')
+        return Reflect.getOwnPropertyDescriptor(target, name)
+      },
+    })
+    const r = compareMirror([hostile], [{ id: 'a', v: 1 }])
+    expect(r.extra).toEqual([])
+    expect(r.status).toBe('unknown')
+  })
+
+  it('C3: an unreadable array slot on the mirror leaves the canonical record unknown', () => {
+    const mirror: unknown[] = [{ id: 'b', v: 1 }]
+    Object.defineProperty(mirror, 1, { get() { throw new Error('slot') }, enumerable: true })
+    const r = compareMirror([{ id: 'a', v: 1 }, { id: 'b', v: 1 }], mirror)
+    expect(r.missing).toEqual([])
+    expect(r.status).toBe('unknown')
+  })
+
+  it('C3: a real missing record stays flagged beside an unreadable canonical record', () => {
+    const r = compareMirror([unreadable(), { id: 'c', v: 1 }], [{ id: 'a', v: 1 }])
+    expect(r.missing).toEqual(['c'])
+    expect(r.extra).toEqual([])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('C3: more ids missing than there are unreadable records is still evidence, so it stays flagged', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }, { id: 'b', v: 1 }], [unreadable()])
+    expect(r.missing).toEqual(['a', 'b'])
+    expect(r.status).toBe('flagged')
+  })
+
+  it('C3: an unreadable canonical record can explain the one extra mirror id, and real drift is still flagged', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }, unreadable()], [{ id: 'a', v: 2 }, { id: 'zz', v: 1 }])
+    expect(r.extra).toEqual([])
+    expect(r.changed).toHaveLength(1)
+    expect(r.status).toBe('flagged')
+  })
+
+  it('C3: a record with an id that is simply absent is still an extra record', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }, { id: 'zz', v: 1 }])
+    expect(r.extra).toEqual(['zz'])
+    expect(r.status).toBe('flagged')
+  })
+})

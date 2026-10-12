@@ -169,6 +169,13 @@ export function findUnknownFields(
   return out;
 }
 
+/** How many records of a side could not be read well enough to know their id. */
+function unreadableIds(read: ReadDataset): number {
+  let count = 0;
+  for (const item of read.invalid) if (item.reason === 'unreadable' && item.id === undefined) count += 1;
+  return count;
+}
+
 export function emptyDatasetInvalid(side: string): InvalidEntry {
   return {
     side,
@@ -266,6 +273,12 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
 
   for (const id of ci.order) if (!mi.byId.has(id)) missing.push(id);
   for (const id of mi.order) if (!ci.byId.has(id)) extra.push(id);
+  // A record whose id could not be read may be any of the ids the other side
+  // lacks, so those ids are not claimed as missing or extra unless there are
+  // more of them than unreadable records could explain. The unreadable
+  // record is already in `invalid`, so the result is `unknown`, not `ok`.
+  if (missing.length <= unreadableIds(m)) missing.length = 0;
+  if (extra.length <= unreadableIds(c)) extra.length = 0;
 
   const only = fields !== undefined ? new Set(fields) : null;
   const ignore = new Set(ignoreFields);

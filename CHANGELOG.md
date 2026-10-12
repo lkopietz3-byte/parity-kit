@@ -161,3 +161,8 @@ Each has a verdict-table row named for its finding id.
   the same names in `unknownFields` for consistency (one existing row changed: an ignored name
   that matches nothing used to be `ok` and is now `unknown`). Names in `ignoreFields` are read
   when `fields` or `valueFields` narrows the read, so they can be checked.
+- `compareMirror` no longer reports an id as `missing` or `extra` because a record on the other
+  side could not be read (C3, hostile-F11). `[{ id: 'a' }]` against a mirror whose only record has
+  a throwing `id` getter used to be `flagged` with `missing: ['a']`; it is now `unknown` with the
+  record in `invalid` (`unreadable`). If more ids are absent than there are unreadable records,
+  the surplus is evidence and they are all still listed. Eight rows are new; no existing row changed.

@@ -224,6 +224,7 @@ Returns `ok`, `status`, `compared`, and:
 - A renamed NFD key therefore shows up three ways: `missing`, `extra` and `suspectKeys`.
 - A key used twice on one side is a `duplicateKey`. That id is not compared field by field, but it still counts as present, so it is never reported as missing.
 - A record that cannot be read but whose key can be read still counts as present. It is never reported as missing.
+- A record whose **key** cannot be read (a getter or Proxy trap on the key field threw) has no identity, so it is `invalid` with reason `unreadable`. It might be any record the other side lacks, so those ids are not claimed as `missing` or `extra` while unreadable records could account for all of them: `[{ id: 'a' }]` against a mirror whose only record has a throwing `id` getter is `unknown`, not `missing: ['a']`. When more ids are absent than there are unreadable records, the surplus is real evidence and they are all listed.
 - In an object-keyed dataset, a record that also carries the key field must agree with its property name, otherwise it is `key-mismatch`.
 
 ### `stampHidesDrift`

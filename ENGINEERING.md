@@ -29,6 +29,11 @@ imports a `node:` module, so it is browser-safe.
   throws `ParityError` (with a `code`). A bad record becomes an `invalid` entry
   and the rest are still compared. A record whose key can be read keeps its
   identity, so it is never reported as `missing`.
+  A record whose key cannot be read has no identity (`invalid`, reason
+  `unreadable`): the ids the other side lacks are not reported as `missing` or
+  `extra` while that many unreadable records could account for them, because
+  the unreadable one may be the counterpart. Past that count the surplus is
+  evidence and everything absent is listed.
 - **A run that checked nothing is never `ok`.** What is wrong with the options
   alone throws: `fields: []`, or a `fields` list that `ignoreFields` cancels
   entirely, is `bad-options`. What depends on the data is reported, not thrown
