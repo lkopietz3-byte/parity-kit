@@ -24,9 +24,20 @@ export function isPlainObject(value: unknown): value is object {
   return proto === null || Reflect.getPrototypeOf(proto) === null;
 }
 
+const hasOwn = Object.hasOwn;
+
+/**
+ * Is this descriptor a data descriptor? The test is for an OWN `value`, never
+ * `'value' in desc`: that walks the prototype chain, so a polluted
+ * `Object.prototype.value` would turn a getter into a data property.
+ */
+export function isDataDescriptor(desc: PropertyDescriptor): boolean {
+  return hasOwn(desc, 'value');
+}
+
 /** The value a property descriptor stands for: its data value, or the result of running its getter once. */
 export function descriptorValue(object: object, desc: PropertyDescriptor): unknown {
-  if ('value' in desc) return desc.value as unknown;
+  if (isDataDescriptor(desc)) return desc.value as unknown;
   // eslint-disable-next-line @typescript-eslint/unbound-method -- the getter is called with its owner as receiver just below
   const getter = desc.get;
   return typeof getter === 'function' ? (Reflect.apply(getter, object, []) as unknown) : undefined;

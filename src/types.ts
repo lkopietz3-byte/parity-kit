@@ -5,7 +5,7 @@ export type Key = string | number;
 export interface Limits {
   /** Most records read from one dataset. Default 1,000,000. */
   maxRecords?: number;
-  /** Most values read across one call, counting every nested value. Arrays and objects are capped at a fifth of this. Default 10,000,000. */
+  /** Most values read across one call, counting every nested value. Arrays and objects are capped at a fifth of this, never below 1,000. Default 10,000,000. */
   maxNodes?: number;
   /** Deepest nesting inside one record (record fields are depth 1). Default 64, at most 1000. */
   maxDepth?: number;

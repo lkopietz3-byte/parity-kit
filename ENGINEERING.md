@@ -81,6 +81,18 @@ imports a `node:` module, so it is browser-safe.
   only with no own tag and a `null` or untouched `Object.prototype`. Anything
   else is `unsupported-value`, never plain data. A probe failure means "plain"
   only when the failure is the brand check itself.
+- **A selected hidden property is read, but never makes an object populated.** With
+  `fields`, a named own property is read whether or not it is enumerable. Only an
+  enumerable one (or any other enumerable property of the record) counts as "populated",
+  so a built-in with a replaced prototype and a hidden own property that `fields` names
+  still gets the built-in probe.
+- **Descriptors are classified by own properties.** A data descriptor is one with an own
+  `value`. `'value' in desc` is never used: it walks the prototype chain, and a polluted
+  `Object.prototype.value` would turn a getter into a data property.
+- **Aliased objects are read once per appearance.** The same object under two fields is
+  snapshotted twice, so a getter on it runs twice. Remembering objects by identity would let
+  shared structure make snapshots and comparisons exponential, which `maxNodes` exists to
+  prevent, so this is a stated limit, not a defect.
 - **Classification never copies and never reads unselected data.** No
   `structuredClone`, no property `Get`.
 - **One read per property.** A record's key, each selected field, the reviewed
@@ -90,7 +102,8 @@ imports a `node:` module, so it is browser-safe.
   `catch` blocks test `isOwnError(value)` (a `WeakSet` membership check, which
   runs no traps) before any `instanceof`, and thrown values are never coerced:
   `describeError` reads only an own data property `message` that is a string.
-- **Bounded work.** `maxRecords`, `maxNodes` (and a lower cap on arrays and
+- **Bounded work.** `maxRecords` (own enumerable string keys of an id-keyed object),
+  `maxNodes` (and a lower cap on arrays and
   objects, which allocate) and `maxDepth` (at most 1000) bound every read.
   Recursion happens only after the depth check, so stack use is bounded.
   Cycles are detected with an ancestor set.

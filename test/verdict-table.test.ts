@@ -2420,3 +2420,157 @@ describe('documentation batch: pinned behaviors the README now states', () => {
     expect(r.changed.map((c) => c.id)).toEqual(['greeting'])
   })
 })
+
+describe('C2: a selected hidden property does not bypass the built-in check', () => {
+  const hiddenMap = (): object => {
+    const m = Object.setPrototypeOf(new Map([['secret', 99]]), null) as object
+    Object.defineProperty(m, 'v', { value: 1, enumerable: false })
+    return m
+  }
+
+  it('C2: a null-prototype Map with a hidden v selected by fields is invalid, not a match', () => {
+    const r = compareMirror({ a: hiddenMap() }, { a: { v: 1 } }, { fields: ['v'] })
+    expect(r.ok).toBe(false)
+    expect(r.status).not.toBe('ok')
+    expect(r.invalid.map((i) => i.reason)).toEqual(['not-a-plain-object'])
+  })
+
+  it('C2: the same holds in an array dataset', () => {
+    const m = hiddenMap()
+    Object.defineProperty(m, 'id', { value: 'a', enumerable: false })
+    const r = compareMirror([m], [{ id: 'a', v: 1 }], { fields: ['v'] })
+    expect(r.ok).toBe(false)
+    expect(r.invalid.map((i) => i.reason)).toEqual(['not-a-plain-object'])
+  })
+
+  it('C2: the Map without the hidden property was already rejected (control)', () => {
+    const m = Object.setPrototypeOf(new Map(), null) as object
+    expect(compareMirror({ a: m }, { a: { v: 1 } }, { fields: ['v'] }).invalid.map((i) => i.reason)).toEqual(['not-a-plain-object'])
+  })
+
+  it('C2: a plain object whose selected property is hidden is still read', () => {
+    const hidden = {}
+    Object.defineProperty(hidden, 'v', { value: 1, enumerable: false })
+    expect(compareMirror({ a: hidden }, { a: { v: 1 } }, { fields: ['v'] }).status).toBe('ok')
+    expect(compareMirror({ a: hidden }, { a: { v: 2 } }, { fields: ['v'] }).status).toBe('flagged')
+  })
+
+  it('C2: a record with an enumerable property that is not selected is plain data and costs no probe', () => {
+    const record = { note: 'x' }
+    Object.defineProperty(record, 'v', { value: 1, enumerable: false })
+    expect(compareMirror({ a: record }, { a: { v: 1 } }, { fields: ['v'] }).status).toBe('ok')
+  })
+})
+
+describe('C5: maxRecords counts only enumerable string-keyed records', () => {
+  it('C5: non-enumerable and symbol-keyed properties of an id-keyed object are not records', () => {
+    const data: Record<string | symbol, unknown> = { a: { v: 1 } }
+    Object.defineProperty(data, 'metadata', { value: 'x' })
+    data[Symbol('tag')] = 1
+    const r = compareMirror(data, data, { limits: { maxRecords: 1 } })
+    expect(r.status).toBe('ok')
+    expect(r.compared).toBe(1)
+  })
+
+  it('C5: two enumerable records still exceed maxRecords 1', () => {
+    expect(() => compareMirror({ a: { v: 1 }, b: { v: 1 } }, { a: { v: 1 } }, { limits: { maxRecords: 1 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+})
+
+describe('hostile-F8: a polluted Object.prototype does not change what an accessor reads', () => {
+  // Pollution is held only while the kit runs: Node's own lazy loaders and the
+  // assertion library break under a polluted `value`, so nothing is asserted until it is removed.
+  function withPollutedValue<T>(polluted: unknown, run: () => T): T {
+    Object.defineProperty(Object.prototype, 'value', { value: polluted, configurable: true, writable: true, enumerable: false })
+    let result: T | undefined
+    let failure: unknown
+    try {
+      result = run()
+    } catch (error) {
+      failure = error
+    } finally {
+      delete (Object.prototype as { value?: unknown }).value
+    }
+    if (failure !== undefined) throw failure as Error
+    return result as T
+  }
+
+  it('F8: Object.prototype.value cannot stand in for a getter result', () => {
+    const run = () => compareMirror([{ id: 'a', get v() { return 1 } }], [{ id: 'a', get v() { return 2 } }])
+    const clean = run()
+    const polluted = withPollutedValue('POLLUTED', run)
+    expect(clean.changed.map((c) => c.field)).toEqual(['v'])
+    expect(polluted.status).toBe('flagged')
+    expect(polluted.changed).toEqual([{ id: 'a', field: 'v', change: 'different', canonical: 1, mirror: 2 }])
+  })
+
+  it('F8: an option given as a getter is read from the getter', () => {
+    const options = {} as { ignoreFields?: string[] }
+    Object.defineProperty(options, 'ignoreFields', { get: () => ['v'], enumerable: true })
+    const r = withPollutedValue('POLLUTED', () => compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }], options))
+    expect(r.noFieldsCompared).toBe(true)
+  })
+
+  it('F8: Object.prototype.value = undefined does not make an accessor constructor look like data', () => {
+    let calls = 0
+    const promise = Object.setPrototypeOf(Promise.resolve(1), null) as object
+    Object.defineProperty(promise, 'constructor', { get: () => { calls += 1; return Promise }, enumerable: false })
+    const r = withPollutedValue(undefined, () => compareMirror({ a: { p: promise } }, { a: { p: 1 } }))
+    expect(calls).toBe(0)
+    expect(r.invalid.map((i) => i.reason)).toEqual(['unsupported-value'])
+  })
+})
+
+describe('hostile-F9 / DR-9: a limit message names the option that raises it', () => {
+  it('F9: the node budget message names limits.maxNodes and its value', () => {
+    let message = ''
+    try {
+      compareMirror([{ id: 'x', v: 1 }], [{ id: 'x', v: 1 }], { limits: { maxNodes: 1 } })
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toContain('limits.maxNodes')
+    expect(message).toContain('(1)')
+    expect(message).not.toContain('1000')
+  })
+
+  it('DR-9: the container cap message gives the real cap and says it is a fifth of maxNodes, at least 1000', () => {
+    let message = ''
+    const records = Array.from({ length: 400 }, (_, i) => ({ id: `r${i}`, v: [[[[[[i]]]]]] }))
+    try {
+      compareMirror(records, records, { limits: { maxNodes: 10_000 } })
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toContain('arrays and objects')
+    expect(message).toContain('a fifth of limits.maxNodes')
+    expect(message).toContain('limit of 2000 ')
+  })
+
+  it('F9: a few hundred thousand ordinary records fit the default budget, and the node budget is what ends a larger set', () => {
+    const records = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i, a: 1, b: 2, c: 3 }))
+    expect(compareMirror(records(5000), records(5000)).status).toBe('ok')
+    expect(() => compareMirror(records(2000), records(2000), { limits: { maxNodes: 20_000 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+  })
+})
+
+describe('C1: a getter-bearing object that appears twice in one record is read once per appearance (documented limit)', () => {
+  it('C1: the shared getter runs once per appearance, so two fields can differ', () => {
+    let reads = 0
+    const shared = { get v() { reads += 1; return reads } }
+    const r = compareMirror([{ id: 'a', x: shared, y: shared }], [{ id: 'a', x: { v: 1 }, y: { v: 1 } }], { fields: ['x', 'y'] })
+    expect(reads).toBe(2)
+    expect(r.ok).toBe(false)
+  })
+
+  it('C1: the same shared object under one field is read once per read', () => {
+    let reads = 0
+    const shared = { get v() { reads += 1; return 1 } }
+    compareMirror([{ id: 'a', x: shared }], [{ id: 'a', x: { v: 1 } }])
+    expect(reads).toBe(1)
+  })
+})

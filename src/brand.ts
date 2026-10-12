@@ -15,6 +15,8 @@
  *   - without `Error.isError` (Node before 24), recognizing an Error uses
  *     `Object.prototype.toString`, which looks up `Symbol.toStringTag`.
  */
+import { isDataDescriptor } from './options.js';
+
 type AnyFunction = (this: unknown, ...args: never[]) => unknown;
 
 function method(proto: unknown, name: string): AnyFunction | undefined {
@@ -96,7 +98,7 @@ function chainHasKey(value: object, key: PropertyKey): boolean {
 function objectPrototypeIsPristine(): boolean {
   try {
     const desc = Reflect.getOwnPropertyDescriptor(Object.prototype, 'constructor');
-    if (desc === undefined || !('value' in desc) || desc.value !== objectConstructor) return false;
+    if (desc === undefined || !isDataDescriptor(desc) || desc.value !== objectConstructor) return false;
     return !chainHasKey(objectConstructor, Symbol.species) && Reflect.getOwnPropertyDescriptor(Object.prototype, Symbol.toStringTag) === undefined;
   } catch {
     return false;
@@ -162,7 +164,7 @@ export function nativeKind(object: object, proto: object | null, facts: ShapeFac
     } catch {
       return 'other';
     }
-    const ownConstructorIsSafe = constructorDesc === undefined || ('value' in constructorDesc && constructorDesc.value === undefined);
+    const ownConstructorIsSafe = constructorDesc === undefined || (isDataDescriptor(constructorDesc) && constructorDesc.value === undefined);
     if (!ownConstructorIsSafe) return 'other';
     if (proto !== null && !objectPrototypeIsPristine()) return 'other';
     if (succeeds(promiseThen, object, [noop, noop])) return 'other';

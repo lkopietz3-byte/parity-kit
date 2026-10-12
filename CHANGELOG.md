@@ -199,3 +199,20 @@ Each has a verdict-table row named for its finding id.
   The strict-TypeScript gate snippet now compiles (it needed `a: StampAudit`). A new test,
   `test/docs-snippets.test.ts`, type-checks and runs every README `ts` block, so a copied example
   cannot rot again.
+- Hostile-input hardening (C2, C5, hostile-F8; C1 documented). A property that `fields` names no
+  longer makes an otherwise empty object look like plain data: a null-prototype `Map` with a
+  hidden own `v` selected by `fields: ['v']` was `ok` and is now `invalid` (`not-a-plain-object`,
+  status `unknown`). `maxRecords` no longer counts non-enumerable or symbol-keyed properties of an
+  id-keyed object as records (a dataset with one record and a hidden `metadata` property threw
+  `too-large` at `maxRecords: 1`). Descriptors are classified by an own `value`, not
+  `'value' in desc`, so a polluted `Object.prototype.value` can no longer turn a getter into a data
+  property (it made two different getter results read as equal). An object that appears twice in
+  one record is still read once per appearance; that limit is now stated in the README and
+  ENGINEERING.md and pinned by two rows, because remembering objects by identity would make shared
+  structure exponential to compare.
+- `too-large` messages name the option that raises the limit (hostile-F9, DR-9): the node budget
+  says `limits.maxNodes` and its value, and the container cap says it is a fifth of `maxNodes`,
+  never below 1,000 (the old text printed an internal floor, `1000`, next to `maxNodes: 1`). The
+  README states that a three-field record costs about 14 on each side, so the default `maxNodes`
+  ends a pair of datasets near 350,000 records before the `maxRecords` default of 1,000,000
+  matters. Defaults are unchanged.

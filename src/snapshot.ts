@@ -1,7 +1,7 @@
 import { isBufferView, nativeKind, type ShapeFacts } from './brand.js';
 import { keyProblem } from './keys.js';
 import { ParityError, isOwnError, registerOwnError } from './errors.js';
-import { descriptorValue, readOwn, type Budget } from './options.js';
+import { descriptorValue, isDataDescriptor, readOwn, type Budget } from './options.js';
 import type { InvalidReason, Key } from './types.js';
 
 /**
@@ -78,7 +78,7 @@ export function describeError(error: unknown): string {
   try {
     if (typeof error === 'object' && error !== null) {
       const desc = Reflect.getOwnPropertyDescriptor(error, 'message');
-      if (desc !== undefined && typeof desc.value === 'string') return desc.value.slice(0, 200);
+      if (desc !== undefined && isDataDescriptor(desc) && typeof desc.value === 'string') return desc.value.slice(0, 200);
     } else if (typeof error === 'string') {
       return error.slice(0, 200);
     }
@@ -477,8 +477,10 @@ function readRecord(
     // was replaced (a null-prototype Map or Date).
     // With selected fields the slots only cover the selection, so look at the record's
     // own keys (descriptors only; no excluded value is read and no getter runs).
+    // A selected property counts only when it is enumerable: a hidden property
+    // that `fields` names must not make a disguised built-in look like plain data.
     const populated =
-      slots.length > 0 ||
+      slots.some((slot) => slot.desc.enumerable === true) ||
       keyDesc?.enumerable === true ||
       (cfg.names !== null && hasOtherEnumerable(raw, cfg, ctx, facts));
     if (!populated) {
@@ -551,9 +553,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id`);
     }
     const keys = Reflect.ownKeys(input);
-    if (keys.length > budget.maxRecords) {
-      throw new ParityError('too-large', `${side} has ${keys.length} keys; the limit is ${budget.maxRecords}`);
-    }
+    // Every own key is looked at (and charged), but only enumerable string keys are records.
     spend(budget, keys.length);
     const slots: Array<{ id: string; desc: PropertyDescriptor }> = [];
     const facts: ShapeFacts = { hasOwnTag: false, constructorDesc: { desc: undefined } };
@@ -570,6 +570,9 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     if (isBufferView(input) || (slots.length === 0 && nativeKind(input, proto, facts) !== undefined)) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
+    }
+    if (slots.length > budget.maxRecords) {
+      throw new ParityError('too-large', `${side} has ${slots.length} records; the limit is limits.maxRecords (${budget.maxRecords})`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const { id, desc } of slots) {
@@ -601,7 +604,9 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
   } catch (error) {
     if (isOwnError(error) && error instanceof ParityError) throw error;
     if (isOwnError(error) && error instanceof BudgetExceeded) {
-      throw new ParityError('too-large', `${side}: the total number of values read passed the limit of ${budget.maxNodes} (or arrays and objects passed ${budget.maxContainers})`);
+      throw new ParityError('too-large', error.message === 'container limit'
+        ? `${side}: arrays and objects passed the limit of ${budget.maxContainers} (a fifth of limits.maxNodes, never below 1000); raise limits.maxNodes if this data is expected`
+        : `${side}: the total number of values read passed limits.maxNodes (${budget.maxNodes}); every value in both datasets counts, about 14 per three-field record per side, so raise limits.maxNodes if this data is expected`);
     }
     throw new ParityError('unreadable-input', `${side}: reading the input threw: ${describeError(error)}`);
   }
