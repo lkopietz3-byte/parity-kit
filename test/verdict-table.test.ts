@@ -1839,3 +1839,97 @@ describe('hostile-F6 / DR-3: a registry cannot silently drop what it was given',
     expect(findHandTypedConstants('cost 1,25 EUR', entry({ forms: ['1,25'] }) as never)).toHaveLength(1)
   })
 })
+
+describe('PF-4 / hostile-F1: an audit that compared nothing is unknown, never ok', () => {
+  const stamped = (n: number, rename: (id: string) => string = (id) => id, date = '2026-01-01') =>
+    Array.from({ length: n }, (_, i) => ({
+      id: rename(`amex-${i}`),
+      cpp: 1 + i / 100,
+      source: `https://example.test/${i}`,
+      lastReviewed: date,
+    }))
+  const opts = { reviewedField: 'lastReviewed', sourceFields: ['source'] }
+  const bare = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+
+  it('PF-4: ids a and b renamed to a-v2 and b-v2 with stamps bumped', () => {
+    const r = auditReviewStamps(
+      [{ id: 'a', lastReviewed: '2026-01-01' }, { id: 'b', lastReviewed: '2026-01-01' }],
+      [{ id: 'a-v2', lastReviewed: '2026-10-01' }, { id: 'b-v2', lastReviewed: '2026-10-01' }],
+      bare,
+    )
+    expect(r.compared).toBe(0)
+    expect(r.noOverlap).toBe(true)
+    expect(r.status).toBe('unknown')
+    expect(r.ok).toBe(false)
+    expect(r.added).toEqual(['a-v2', 'b-v2'])
+    expect(r.removed).toEqual(['a', 'b'])
+  })
+
+  const renames: Array<[string, (id: string) => string]> = [
+    ['a NUL suffix', (id) => `${id}\u0000`],
+    ['a tag character U+E0041 suffix', (id) => `${id}\u{E0041}`],
+    ['a Greek alpha for a', (id) => id.replace('a', 'α')],
+    ['a plain -v2 suffix', (id) => `${id}-v2`],
+  ]
+  it.each(renames)('hostile-F1: 25 records renamed with %s', (_name, rename) => {
+    const r = auditReviewStamps(stamped(25), stamped(25, rename, '2026-10-10'), opts)
+    expect(r.compared).toBe(0)
+    expect(r.noOverlap).toBe(true)
+    expect(r.status).toBe('unknown')
+    expect(r.ok).toBe(false)
+  })
+
+  it('PF-4: 25 removed and 25 disjoint new ids is unknown', () => {
+    const r = auditReviewStamps(stamped(25), stamped(25, (id) => `new-${id}`, '2026-10-10'), opts)
+    expect(r.noOverlap).toBe(true)
+    expect(r.status).toBe('unknown')
+  })
+
+  it('PF-4: the same ids with the same bump stay flagged (control)', () => {
+    const r = auditReviewStamps(stamped(25), stamped(25, (id) => id, '2026-10-10'), opts)
+    expect(r.noOverlap).toBe(false)
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toHaveLength(25)
+    expect(r.bulkBump).toHaveLength(1)
+  })
+
+  it('PF-4: both snapshots empty with allowEmpty is still ok', () => {
+    const r = auditReviewStamps([], [], { ...opts, allowEmpty: true })
+    expect(r.noOverlap).toBe(false)
+    expect(r.status).toBe('ok')
+  })
+
+  it('PF-4: an empty first snapshot with allowEmpty and new records is not a failed overlap', () => {
+    const r = auditReviewStamps([], stamped(3, (id) => id, '2026-10-10'), { ...opts, allowEmpty: true })
+    expect(r.noOverlap).toBe(false)
+    expect(r.status).toBe('ok')
+  })
+
+  it('PF-4: one shared id is enough to have compared something', () => {
+    const after = [...stamped(3, (id) => `x-${id}`, '2026-10-10'), ...stamped(1, (id) => id, '2026-01-01')]
+    const r = auditReviewStamps(stamped(3), after, opts)
+    expect(r.compared).toBe(1)
+    expect(r.noOverlap).toBe(false)
+  })
+
+  it('PF-4: id-keyed objects with every key renamed are unknown too', () => {
+    const r = auditReviewStamps({ a: { lastReviewed: '2026-01-01' } }, { 'a-v2': { lastReviewed: '2026-10-01' } }, bare)
+    expect(r.noOverlap).toBe(true)
+    expect(r.status).toBe('unknown')
+  })
+
+  it('PF-4: a bare 1 renamed to the string "1" is still never ok', () => {
+    const r = auditReviewStamps([{ id: 1, lastReviewed: '2026-01-01' }], [{ id: '1', lastReviewed: '2026-10-01' }], bare)
+    expect(r.ok).toBe(false)
+    expect(r.noOverlap).toBe(true)
+  })
+
+  it('PF-4: the README gate recipe does not accept a set with nothing compared', () => {
+    const accept = (a: ReturnType<typeof auditReviewStamps>) =>
+      a.ok || (a.bulkBump.every((b) => b.withoutEvidence === 0) && !a.noOverlap &&
+        a.stampOnly.length === 0 && a.future.length === 0 && a.backward.length === 0 &&
+        a.extendedDeadlines.length === 0 && a.unknown.length === 0 && a.unknownFields.length === 0 &&
+        a.duplicateKeys.length === 0 && a.suspectKeys.length === 0 && a.invalid.length === 0)
+    expect(accept(auditReviewStamps(stamped(25), stamped(25, (id) => `${id}-v2`, '2026-10-10'), opts))).toBe(false)
+  })
+})

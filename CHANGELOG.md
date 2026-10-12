@@ -142,3 +142,9 @@ Each has a verdict-table row named for its finding id.
   `bad-registry` instead of returning `[]`, so a registry file that failed to load cannot pass
   as "no hand-typed copies". Empty text with a real registry still returns `[]`. One existing
   row changed: `findHandTypedConstants('1.25', [])` used to be `[]` and now throws.
+- `auditReviewStamps` adds `noOverlap` (PF-4, hostile-F1). When both snapshots have keyed records
+  and not one key is shared, the status is `unknown` and `ok` is false. Before, renaming every
+  id (a NUL or `-v2` suffix, a Greek letter, a tag character) gave `compared: 0` and `ok: true`.
+  The same ids with the same bump are still `flagged`, and two empty snapshots with `allowEmpty`
+  are still `ok`. The result type gains one boolean field. The README gate recipe for evidenced
+  bulk bumps now also requires `!a.noOverlap`.

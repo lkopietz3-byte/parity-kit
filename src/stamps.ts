@@ -112,6 +112,13 @@ export interface StampAudit {
   status: Status;
   /** Records present once and readable in both snapshots. */
   compared: number;
+  /**
+   * True when both snapshots have keyed records and not one key appears in both,
+   * so nothing could be compared. That is what a wholesale rename of every id
+   * looks like (or the wrong two files). The result is `unknown`, never `ok`:
+   * a gate must not pass because every record looked new.
+   */
+  noOverlap: boolean;
   stampOnly: StampOnly[];
   bulkBump: BulkBump[];
   future: FutureStamp[];
@@ -245,6 +252,8 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
   const duplicateKeys = [...duplicatesOf('before', bi), ...duplicatesOf('after', ai)];
   const added: Key[] = ai.order.filter((id) => !bi.byId.has(id));
   const removed: Key[] = bi.order.filter((id) => !ai.byId.has(id));
+  // Both sides have keyed records and every one is new or gone: nothing to compare.
+  const noOverlap = bi.order.length > 0 && ai.order.length > 0 && added.length === ai.order.length;
 
   const stampOnly: StampOnly[] = [];
   const future: FutureStamp[] = [];
@@ -368,12 +377,13 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
 
   const flagged =
     stampOnly.length + bulkBump.length + future.length + backward.length + extendedDeadlines.length + duplicateKeys.length > 0;
-  const notJudged = unknown.length + invalid.length + suspectKeys.length + unknownFields.length > 0;
+  const notJudged = unknown.length + invalid.length + suspectKeys.length + unknownFields.length > 0 || noOverlap;
   const status: Status = flagged ? 'flagged' : notJudged ? 'unknown' : 'ok';
   return {
     ok: status === 'ok',
     status,
     compared,
+    noOverlap,
     stampOnly,
     bulkBump,
     future,

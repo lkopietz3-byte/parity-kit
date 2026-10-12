@@ -170,6 +170,7 @@ Returns `ok`, `status`, `compared`, and:
 
 | Field | What it holds |
 | --- | --- |
+| `noOverlap` | `true` when both snapshots have keyed records and not one key appears in both, so nothing was compared. Renaming every id, or auditing the wrong two files, looks exactly like this. The result is `unknown`, never `ok`. |
 | `stampOnly` | `{ id, from, to }`: the review date moved later and no value, source or reviewer changed. |
 | `bulkBump` | `{ summary, count, withEvidence, withoutEvidence, date, ids }`: more than `bulkThreshold` records moved to the same new UTC day. Read `summary` first. |
 | `future` | `{ id, value }`: a review date later than `now`. |
@@ -181,7 +182,7 @@ Returns `ok`, `status`, `compared`, and:
 | `added`, `removed` | Keys only in `after` or only in `before`. Informational. |
 | `duplicateKeys`, `suspectKeys`, `invalid` | As in `compareMirror`. |
 
-`status` is `flagged` when `stampOnly`, `bulkBump`, `future`, `backward`, `extendedDeadlines` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `unknown`, `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
+`status` is `flagged` when `stampOnly`, `bulkBump`, `future`, `backward`, `extendedDeadlines` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `noOverlap` is `true` or `unknown`, `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
 
 ## Exact rules
 
@@ -273,7 +274,7 @@ A field added or removed counts as a change. The expiry field is not evidence: m
 ```ts
 const acceptEvidencedBulk = (a) =>
   a.ok ||
-  (a.bulkBump.every((b) => b.withoutEvidence === 0) &&
+  (a.bulkBump.every((b) => b.withoutEvidence === 0) && !a.noOverlap &&
     a.stampOnly.length === 0 && a.future.length === 0 && a.backward.length === 0 &&
     a.extendedDeadlines.length === 0 && a.unknown.length === 0 && a.unknownFields.length === 0 &&
     a.duplicateKeys.length === 0 && a.suspectKeys.length === 0 && a.invalid.length === 0);
@@ -283,7 +284,7 @@ Checking only `stampOnly` and `bulkBump` is not enough: missing stamps, invalid 
 
 **`backward`:** the stamp moved earlier. **`extendedDeadlines`:** the expiry moved later and no source field changed. A removed expiry is `unknown` (`expiry-removed`), and a newly added expiry is not reported.
 
-**Records:** only a record present exactly once and readable in both snapshots is compared. A record that is new in `after` is still checked for a future date or an unusable stamp, but a new record cannot be a stamp-only move.
+**Records:** only a record present exactly once and readable in both snapshots is compared. A record that is new in `after` is still checked for a future date or an unusable stamp, but a new record cannot be a stamp-only move. If both snapshots have records and no key is shared, nothing could be compared, so `noOverlap` is `true` and the status is `unknown` (an empty snapshot allowed by `allowEmpty` is not that case). One shared key is enough to clear `noOverlap`; the kit does not judge how large the overlap should be.
 
 ## Limits and errors
 
