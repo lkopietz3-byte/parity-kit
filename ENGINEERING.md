@@ -62,7 +62,8 @@ imports a `node:` module, so it is browser-safe.
   does not change that). Only an object with **no own enumerable property**
   is probed for being a built-in whose prototype was replaced (`src/brand.ts`:
   captured built-in methods that only succeed on a real instance). That probe
-  throws internally and costs tens of microseconds per empty-looking object;
+  throws internally and costs about 0.2 ms of CPU per empty-looking object
+  (measured on a loaded machine; no quiet-machine figure is verified);
   it does not change any global (no `Error.stackTraceLimit`), and it is linear.
   The probe also refuses an empty object whose prototype is neither `null` nor
   this realm's untouched `Object.prototype` (an empty object from another

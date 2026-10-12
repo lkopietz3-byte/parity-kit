@@ -122,8 +122,8 @@ export interface ShapeFacts {
  * cannot be ruled out, or `undefined` for an ordinary empty object. Nothing is
  * copied. An empty object whose prototype is neither `null` nor this realm's
  * `Object.prototype` cannot be ruled out (a Promise could hide there), so it is
- * `'other'`. A failed probe throws internally, so this costs tens of
- * microseconds per call.
+ * `'other'`. A failed probe throws internally, so this costs about 0.2 ms of
+ * CPU per call (measured on a loaded machine).
  */
 export function nativeKind(object: object, proto: object | null, facts: ShapeFacts): NativeKind {
   if (dateGetTime !== undefined) {
