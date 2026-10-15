@@ -24,7 +24,9 @@ First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newe
   `numberTolerance` adds a binary-rounding allowance capped at a thousandth of the tolerance,
   so a real difference is still different at any magnitude. `foldInvisible: false` keeps keys
   that differ only by an invisible character (emoji sequences, a control-character separator)
-  as different keys; the default folds them. `suspectKeys[].skeleton` is clipped to 40 units.
+  as different keys; the default folds them. `suspectKeys[].skeleton` is clipped to 40 units,
+  so it is display text and two groups can share one; the README waiver recipe names a reviewed
+  group by its keys.
   The key column never counts as a compared field.
 - `findHandTypedConstants(text, registry)` finds hand-typed copies of registered constants,
   with line, column and index. Numbers match by value at token boundaries (`1.25` is not found

@@ -235,9 +235,9 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import type { MirrorResult } from 'parity-kit';",
+    starts: "import type { Key, MirrorResult } from 'parity-kit';",
     prelude: '',
-    suffix: 'export { acceptKnownTwins, knownTwins };',
+    suffix: 'export { acceptKnownTwins, acceptTwins };',
     check: ({ first }) => {
       const accept = first.out['acceptKnownTwins'] as (r: MirrorResult) => boolean
       const twins = [{ id: 'Saving …', v: 1 }, { id: 'Saving …', v: 2 }]
@@ -254,6 +254,24 @@ const SNIPPETS: Snippet[] = [
       expect(other.suspectKeys).toHaveLength(2)
       expect(accept(other)).toBe(false)
       expect(accept(api.compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }]))).toBe(true)
+      // release-review:P2: the skeleton is clipped display text. Two groups with long keys can report the same
+      // skeleton, and approving one must not approve the other.
+      const accepts = first.out['acceptTwins'] as (reviewed: Array<Array<string | number>>) => (r: MirrorResult) => boolean
+      const long = 'x'.repeat(40)
+      const pairs = [`${long}a`, `${long}A`, `${long}b`, `${long}B`].map((id) => ({ id, v: 1 }))
+      const longResult = api.compareMirror(pairs, pairs.map((p) => ({ ...p })))
+      expect(longResult.suspectKeys).toHaveLength(2)
+      expect(longResult.suspectKeys[0]?.skeleton).toBe(longResult.suspectKeys[1]?.skeleton)
+      expect(accepts([[`${long}a`, `${long}A`]])(longResult), 'release-review:P2: one reviewed group, two present').toBe(false)
+      expect(accepts([[`${long}b`, `${long}B`]])(longResult), 'release-review:P2: the other group reviewed alone').toBe(false)
+      expect(accepts([[`${long}A`, `${long}a`], [`${long}B`, `${long}b`]])(longResult), 'release-review:P2: both reviewed, any order').toBe(true)
+      // A reviewed group that gains a third look-alike key is a new group and fails again.
+      const grown = [...pairs, { id: `${long}\u200ba`, v: 1 }]
+      expect(accepts([[`${long}a`, `${long}A`], [`${long}b`, `${long}B`]])(api.compareMirror(grown, grown.map((p) => ({ ...p })))), 'release-review:P2: a group that grew').toBe(false)
+      // 1 and "1" are different keys.
+      const mixed = [{ id: 1, v: 1 }, { id: '1', v: 1 }]
+      expect(accepts([[1, '1']])(api.compareMirror(mixed, mixed.map((p) => ({ ...p }))))).toBe(true)
+      expect(accepts([['1', '1']])(api.compareMirror(mixed, mixed.map((p) => ({ ...p }))))).toBe(false)
     },
   },
 ]

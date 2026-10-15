@@ -212,7 +212,7 @@ Returns:
 | `stampHidesDrift` | `{ id, reviewedValue, fields }` when both copies carry the same review date but other fields differ. |
 | `duplicateKeys` | `{ side, id, positions }` for a key used by more than one record on one side. Those records are not compared. |
 | `unknownFields` | Names you selected or ignored (`fields`, `reviewedField`, `ignoreFields`) that appear in no readable record on either side. A misspelled name lands here and the result is never `ok`. |
-| `suspectKeys` | `{ skeleton, keys: [{ side, key }] }` for keys that look alike but are not identical. `skeleton` is clipped to 40 UTF-16 units with the original length appended, so a report never grows past its input; the raw `keys` are listed in full. |
+| `suspectKeys` | `{ skeleton, keys: [{ side, key }] }` for keys that look alike but are not identical. `skeleton` is clipped to 40 UTF-16 units with the original length appended, so a report never grows past its input; the raw `keys` are listed in full. Two different groups can show the same clipped `skeleton`, so identify a group by its `keys`. |
 | `invalid` | Records (or a whole dataset) that could not be read, with a reason. |
 
 `status` is `flagged` when `missing`, `extra`, `changed`, `stampHidesDrift` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `noFieldsCompared` is `true` or `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
@@ -505,19 +505,26 @@ const exact = compareMirror(hearts, hearts.map((h) => ({ ...h })), { foldInvisib
 
 ### Known look-alike keys and known findings
 
-Some real data keeps two keys that differ only by a no-break space, or one record with a date that is known to be wrong. The kit has no allow list or baseline: a waiver is a decision a person made, so it belongs in your repository where it can be reviewed. Filter the result yourself, and keep every other list failing:
+Some real data keeps two keys that differ only by a no-break space, or one record with a date that is known to be wrong. The kit has no allow list or baseline: a waiver is a decision a person made, so it belongs in your repository where it can be reviewed. Filter the result yourself, and keep every other list failing. Name each reviewed group by the keys in it, not by `skeleton`: the skeleton is display text clipped to 40 units, so two different groups with long keys can report the same one, and approving one would approve the other.
 
 ```ts
-import type { MirrorResult } from 'parity-kit';
+import type { Key, MirrorResult } from 'parity-kit';
 
-const knownTwins = new Set(['saving ...']); // the `skeleton` of each reviewed group in result.suspectKeys
-const acceptKnownTwins = (r: MirrorResult) =>
-  r.ok ||
-  (r.missing.length === 0 && r.extra.length === 0 && r.changed.length === 0 &&
-    r.stampHidesDrift.length === 0 && r.duplicateKeys.length === 0 && r.invalid.length === 0 &&
-    r.unknownFields.length === 0 && !r.noFieldsCompared &&
-    r.suspectKeys.every((group) => knownTwins.has(group.skeleton)));
+// One entry per reviewed group: every key in it, as listed in result.suspectKeys[].keys.
+const groupId = (keys: ReadonlyArray<Key>) => JSON.stringify([...new Set(keys.map((key) => JSON.stringify(key)))].sort());
+const acceptTwins = (reviewed: Array<Array<Key>>) => {
+  const known = new Set(reviewed.map(groupId));
+  return (r: MirrorResult) =>
+    r.ok ||
+    (r.missing.length === 0 && r.extra.length === 0 && r.changed.length === 0 &&
+      r.stampHidesDrift.length === 0 && r.duplicateKeys.length === 0 && r.invalid.length === 0 &&
+      r.unknownFields.length === 0 && !r.noFieldsCompared &&
+      r.suspectKeys.every((group) => known.has(groupId(group.keys.map((entry) => entry.key)))));
+};
+const acceptKnownTwins = acceptTwins([['Saving \u2026', 'Saving\u00a0\u2026']]);
 ```
+
+A reviewed group that later gains another look-alike key no longer matches and fails again. `1` and `"1"` are different keys.
 
 The same pattern works for `auditReviewStamps`: drop the entries whose `id` is on a reviewed list (for example `audit.future.filter((f) => !knownFutureIds.has(f.id))`) and require every other list to be empty, as in the bulk-bump gate above.
 
