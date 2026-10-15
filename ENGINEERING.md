@@ -46,6 +46,11 @@ imports a `node:` module, so it is browser-safe.
   because ignoring less means more fields count as evidence in the audit: a typo
   there fails open. Registry entries accept only `id`, `value` and `forms`, and a
   registry must not be empty, for the same reason.
+- **Options are read as written or refused.** An option object throws `bad-options` for an
+  unknown name, a symbol key, or an own property that is not enumerable. Skipping any of them
+  would turn the check it configures off without a word (`fields` defined as non-enumerable
+  compared every field). Registry entries are the one place that keeps the older rule: an unknown
+  enumerable key is refused, a hidden or symbol key is not read (two committed rows pin that).
 - **Read once, then compare.** A record is read into a snapshot: own enumerable
   string-keyed properties only (or the named own properties), data values
   taken from the descriptor and getters run exactly once, keys sorted so a
