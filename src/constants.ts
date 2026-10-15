@@ -179,9 +179,23 @@ function* lexNumbers(text: string): Generator<LexedRun> {
       if (j - start > 1 && text.charCodeAt(start) === 48) valid = false;
       // Groups of exactly three digits after "," or "_" (1,250 and 1_250); the separator must not change within a number.
       // A comma group also needs a leading group of one to three digits that does not start with 0:
-      // "2024,100" and "[1000,250]" hold two numbers each, and "0,500" holds 0 and 500.
+      // "2024,100" and "[1000,250]" hold two numbers each.
       const separator = text.charCodeAt(j);
       const groupable = separator === 95 || (j - start <= 3 && text.charCodeAt(start) !== 48);
+      // "0,500" is the decimal-comma spelling of 0.5, not a 0 and a 500: skip the run whole.
+      if (
+        separator === 44 &&
+        j - start === 1 &&
+        text.charCodeAt(start) === 48 &&
+        j + 3 < n &&
+        isDigitCode(text.charCodeAt(j + 1)) &&
+        isDigitCode(text.charCodeAt(j + 2)) &&
+        isDigitCode(text.charCodeAt(j + 3)) &&
+        !(j + 4 < n && isDigitCode(text.charCodeAt(j + 4)))
+      ) {
+        valid = false;
+        j += 4;
+      }
       while (
         j + 3 < n &&
         groupable &&

@@ -3048,9 +3048,14 @@ describe('gate-hostile:F2: a thousands group needs a leading group of one to thr
     expect(found(value, text)).toEqual([])
   })
 
-  it('gate-hostile:F2: 0,500 is a 0 and a 500 (a decimal comma is not read as a fraction), never 0500', () => {
-    expect(found(500, 'ratio 0,500')).toEqual(['500'])
-    expect(found(0, 'ratio 0,500')).toEqual(['0'])
+  it('gate-hostile:F2: 0,500 is the decimal-comma spelling of 0.5, so it is neither a 0 nor a 500, and a form can still name it', () => {
+    expect(found(500, 'ratio 0,500')).toEqual([])
+    expect(found(0, 'ratio 0,500')).toEqual([])
+    expect(found(500, 'x 0,500,y')).toEqual([])
+    expect(findHandTypedConstants('ratio 0,500 here', [{ id: 'c', value: 0.5, forms: ['0,500'] }]).map((h) => h.text)).toEqual(['0,500'])
+    // Two digits after the comma, or a longer fraction, is not that shape.
+    expect(found(25, 'ratio 0,25')).toEqual(['25'])
+    expect(found(5000, 'x 0,5000')).toEqual(['5000'])
   })
 
   it.each([
