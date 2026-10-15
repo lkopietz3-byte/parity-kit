@@ -15,6 +15,7 @@ Check that every copy of a fact still matches its source of truth, and that a re
 - `npm run build`
 - `npm run attw` checks the packed types; `npm run audit:dependencies` audits the lockfile.
 - `npm run verify:package` packs and installs the tarball offline; run `npm run build` first.
+- `npm run bench` builds, then scores the kit on the labeled corpus in `bench/` and fails if any count moves from `bench/expected.json`. A count that moves is a changed verdict: name the items before refreshing the pin (`bench/README.md`).
 
 ## Rules
 - Run `npm run verify` and read its output before calling work done. Report any step that did not run.

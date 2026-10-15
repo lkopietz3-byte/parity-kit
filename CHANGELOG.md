@@ -267,3 +267,45 @@ Each has a verdict-table row named for its finding id.
     are not refused, and registry entries keep their rule (a hidden or symbol key is not read).
     Two earlier rows pin that rule, and a hidden key cannot hide a misspelling that a person
     would type.
+
+### Added (evidence round: benchmark, cross-check, comparison page)
+
+No public API change (`api-surface.json` is untouched) and no verdict changed. Runtime
+`dependencies` stay empty; the two reference diff libraries are dev dependencies only.
+
+- `bench/` and `npm run bench`: a labeled benchmark of real and seeded data (translation files,
+  the pypa advisory database against its OSV copy, entity tables, review-stamp histories, price
+  grids, hand-typed constants in advisory texts), derived and license-checked, with
+  `bench/SOURCES.json` naming every source, commit and license. It reports per class how often the
+  kit passed something that should flag (false pass) and flagged something that was fine (false
+  flag), with denominators and 95% Wilson intervals (`bench/RESULTS.md`), and fails when any
+  confusion matrix differs from `bench/expected.json`. Result on the offline data: 0 false passes
+  in 45,205 items that should flag and 0 false flags in 3,156,270 items that should pass (the
+  rows overlap, so these count verdicts); with the two AGPL sources fetched by pinned commit
+  (`bench/fetch/fetch.mjs`, SHA-256 checked, not stored in the repository): 0 of 121,642 and 0 of
+  3,287,820. CI runs it after the build. `bench/` is not in the npm package and `verify:package`
+  now refuses a tarball that contains `bench/` or `docs/`.
+- A fresh holdout in `bench/holdout/`: 45,491 mirrored-fact items from three families the earlier
+  corpus did not use (IANA HTTP status registry against five copies, SPDX license list against
+  two npm packages, Gitea strings against twelve translations). Labeled by `label.py` and
+  committed, with a written prediction, before any code ran the kit on it. Result: 0 false
+  passes in 7,526 items that should flag, 0 false flags in 37,965 items that should pass, and
+  every one of the 19 mirrors came back `flagged`, as predicted.
+- `test/bench-regression.test.ts`: the quick subset of the benchmark (about 180,000 verdicts) runs
+  on every `npm test` against `src/` and must equal the pinned matrices. Reverting the
+  `numberTolerance` rounding allowance (1,522 false flags, the number the field trial found) or
+  moving the bulk threshold by one (11 false passes) each fails it, and a build that hides drift
+  in one field fails `npm run bench` (all checked against deliberately broken code).
+- `test/differential.test.ts` and `docs/differential.md`: `compareMirror` against `deep-diff`
+  1.0.2 and `microdiff` 1.6.0 on 15,000 seeded datasets (0 disagreements on missing, extra and
+  changed (id, field) sets), two 5,000-dataset runs with unusual field names, four properties
+  that need no reference, and a table of 19 rulings. The libraries say "no difference" about data
+  that differs in four of those: two `Map`s with different contents, a class instance against a
+  plain object, a new property named `""` (deep-diff) and a new property named like an
+  `Object.prototype` member such as `constructor` (microdiff). The kit refuses the first two and
+  reports the other two.
+- `docs/what-a-diff-cannot-answer.md`: twelve runnable cases that put the same data through the
+  two libraries and the kit, two of them ties. Every block is run by
+  `test/what-a-diff-cannot-answer.test.ts` and its printed result must equal the text under it;
+  `node bench/doc-cases.mjs` rewrites the page from the code.
+- ESLint now lints `bench/**/*.mjs` with the rules used for `scripts/`.

@@ -18,6 +18,14 @@ Facts get copied. A `programs.json` feeds a website, a browser extension ships i
 
 freshness-kit (a sibling kit) scores how old a review date is. This kit asks a different question: do the copies agree, and did the date move for a reason the data can show.
 
+## Evidence
+
+The claims here are checked, and the checks can be re-run by anyone with a checkout.
+
+- `bench/` is a labeled benchmark: real translation files, an advisory database and its OSV copy, entity tables and review-stamp histories, a fresh holdout that was labeled before the kit was run on it, and seeded edits. `npm run bench` prints false-pass and false-flag counts per class with denominators and fails if any count moves. Read `bench/README.md` for what it does and does not show, and `bench/RESULTS.md` for the numbers.
+- `docs/differential.md` records the cross-check against two generic diff libraries (`deep-diff` and `microdiff`, dev dependencies only) and every place the three disagree.
+- `docs/what-a-diff-cannot-answer.md` runs twelve cases through those libraries and the kit side by side, including the two where a diff is as good.
+
 ## Install
 
 parity-kit is private and not published, so you install it from a checkout. A fresh checkout has no compiler and no `dist/`, so build it once first:
@@ -442,5 +450,7 @@ npm run verify      # lint, typecheck, tests, build, packaging checks
 npm run attw        # check the packed types resolve for ESM consumers
 npm run audit:dependencies
 ```
+
+`npm run bench` rebuilds the package and re-runs the labeled benchmark (see `bench/README.md`); CI runs it after the build. The test suite runs a small subset of it on every `npm test`.
 
 See `ENGINEERING.md` for the design rules and `CONTRIBUTING.md` for how to change behavior.

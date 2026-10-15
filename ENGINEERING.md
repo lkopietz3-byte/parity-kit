@@ -156,6 +156,19 @@ Tests:
 - `test/scaling.test.ts` holds the 100,000-record and 1 MB cases, and ratio
   checks on CPU time (four times the input must cost well under sixteen times
   the time).
+- `test/differential.test.ts` checks `compareMirror` against `deep-diff` and
+  `microdiff` (dev dependencies only) on seeded datasets, states four
+  properties that need no reference, and pins every known disagreement in a
+  ruling table that `docs/differential.md` explains. The generator lives in the
+  test file and nowhere else.
+- `test/bench-regression.test.ts` runs the quick subset of `bench/` (labeled
+  real and seeded data, about 180,000 verdicts) against `src/` and requires the
+  confusion matrices in `bench/expected.json` exactly. `npm run bench` runs all
+  of it against `dist/`; CI runs that after the build. A count that moves is a
+  changed verdict: say which items moved before refreshing the pin.
+- `test/what-a-diff-cannot-answer.test.ts` runs every js block of
+  `docs/what-a-diff-cannot-answer.md` and compares what it prints with the text
+  under it.
 
 Each regression test must fail on the source it fixes. Never edit a fixture or
 an expected verdict to make a test pass.
