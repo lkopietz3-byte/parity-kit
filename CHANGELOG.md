@@ -111,6 +111,18 @@ None. This is the first version, so there is nothing to migrate from.
 - An oversized key is refused before any trim or whitespace scan, on the array and id-keyed
   paths, so its cost no longer grows with its length.
 
+### Fixed (review round 5)
+
+- A property name of an id-keyed object is judged before its getter runs. A name that is too long
+  or built from too many combining marks is refused (`key-too-long`, `key-unnormalizable`) without
+  running the getter, so a throwing getter on such a name cannot be used to skip the bound.
+- The run of combining marks is counted after compatibility decomposition (NFKD) of each
+  character, because a character such as U+FF9E becomes a combining mark under NFKC, which is
+  what key comparison uses. Forty of them in a row is refused; sixteen is fine. The scan stays
+  linear (a decomposition is at most a few code points).
+- An array in a record slot that carries a readable key property keeps its identity: it is
+  reported `invalid` (`not-an-object`) and its id is never reported as `missing` or `extra`.
+
 ### Added and fixed (field-trial round)
 
 - `compareMirror` and `auditReviewStamps` report `unknownFields`: a selected or configured name
