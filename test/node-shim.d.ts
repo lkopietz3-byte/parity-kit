@@ -13,7 +13,14 @@ declare module 'node:fs' {
   export function writeFileSync(path: string, data: string): void
   export function mkdtempSync(prefix: string): string
   export function readFileSync(path: string, encoding: 'utf8'): string
+  export function readFileSync(path: string): Uint8Array
   export function rmSync(path: string, options: { recursive: boolean; force: boolean }): void
+}
+declare module 'node:crypto' {
+  export function createHash(algorithm: 'sha256'): { update(data: Uint8Array | string): { digest(encoding: 'hex'): string } }
+}
+declare module 'node:module' {
+  export function createRequire(url: string): (id: string) => unknown
 }
 declare module 'node:os' {
   export function tmpdir(): string
@@ -30,4 +37,5 @@ declare const process: {
 // Vitest provides import.meta.dirname on Node 20.11+.
 interface ImportMeta {
   readonly dirname: string
+  readonly url: string
 }
