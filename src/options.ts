@@ -52,7 +52,8 @@ export function readOwn(object: object, key: string): unknown {
 /**
  * Read an options object once. Only own properties are read. An unknown
  * option name is an error, so a misspelled option can never silently
- * disable a check.
+ * disable a check; so is a symbol key or a non-enumerable property, which
+ * would otherwise be skipped without a word.
  */
 export function readOptions(
   options: unknown,
@@ -66,10 +67,19 @@ export function readOptions(
       throw new ParityError('bad-options', `${what}: options must be a plain object`);
     }
     for (const name of Reflect.ownKeys(options)) {
-      if (typeof name !== 'string') continue;
+      // An option that is skipped would silently turn its check off, so what
+      // cannot be read as written is refused: a symbol key, a hidden property.
+      if (typeof name !== 'string') {
+        throw new ParityError('bad-options', `${what}: options must not have symbol keys`);
+      }
       // One descriptor read per property: the value comes from this descriptor.
       const desc = Reflect.getOwnPropertyDescriptor(options, name);
-      if (desc === undefined || desc.enumerable !== true) continue;
+      if (desc === undefined) {
+        throw new ParityError('bad-options', `${what}: option "${name}" could not be read`);
+      }
+      if (desc.enumerable !== true) {
+        throw new ParityError('bad-options', `${what}: option "${name}" is not enumerable, so it would be skipped`);
+      }
       if (!allowed.includes(name)) {
         throw new ParityError('bad-options', `${what}: unknown option "${name}"`);
       }

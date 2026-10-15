@@ -223,3 +223,16 @@ Each has a verdict-table row named for its finding id.
   section gives those steps in order and adds a table of load methods (`import` on Node 20 and
   newer; `require()` on Node 20.19 and 22.12 and newer, which are the floors the compatibility
   matrix pins). The script is not shipped in the tarball and does not run for a tarball install.
+- An option that cannot be read as written is refused (hostile-F12). A symbol-keyed option, or an
+  own option defined as non-enumerable (`fields` with `enumerable: false`), used to be skipped
+  with no error, so `compareMirror` compared every field and `auditReviewStamps` ignored an
+  `ignoreFields` list. Both now throw `ParityError('bad-options')`. Ordinary options, an explicit
+  `undefined` and a null-prototype options object are unchanged. Registry entries keep their rule
+  (an unknown enumerable key is refused; a hidden or symbol key is not read), which is stated in
+  the README.
+- More invisible characters in an id make a look-alike (hostile-F12). Control characters (NUL,
+  DEL, C1), the tag block U+E0000 to U+E007F, U+FFF9 to U+FFFC and the musical formatting
+  characters U+1D173 to U+1D17A are removed when keys are compared for look-alikes, so `prog-1`
+  against `prog<NUL>-1` is reported in `suspectKeys` as well as `missing` and `extra`. This can
+  only add `suspectKeys` entries (status `unknown` instead of `ok`, never the other way). A Greek
+  alpha, a small-capital `A`, `1` for `l` and `rn` for `m` stay unfolded and are documented.

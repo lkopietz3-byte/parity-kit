@@ -2574,3 +2574,96 @@ describe('C1: a getter-bearing object that appears twice in one record is read o
     expect(reads).toBe(1)
   })
 })
+
+describe('hostile-F12: an option that cannot be read as written is refused, not skipped', () => {
+  const hidden = (name: string, value: unknown): object => {
+    const options = {}
+    Object.defineProperty(options, name, { value, enumerable: false })
+    return options
+  }
+  const canonical = [{ id: 'a', v: 1, w: 1 }]
+  const mirror = [{ id: 'a', v: 1, w: 2 }]
+
+  it('hostile-F12: a non-enumerable `fields` throws bad-options instead of selecting nothing', () => {
+    expect(() => compareMirror(canonical, mirror, hidden('fields', ['v']) as MirrorOptions)).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('hostile-F12: a non-enumerable `ignoreFields` or `numberTolerance` throws bad-options', () => {
+    expect(() => compareMirror(canonical, mirror, hidden('ignoreFields', ['w']) as MirrorOptions)).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+    expect(() => compareMirror(canonical, mirror, hidden('numberTolerance', 5) as MirrorOptions)).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('hostile-F12: a symbol-keyed option throws bad-options and the message says so', () => {
+    const options = { [Symbol('fields')]: ['v'] } as unknown as MirrorOptions
+    expect(() => compareMirror(canonical, mirror, options)).toThrowError(
+      expect.objectContaining({ code: 'bad-options', message: expect.stringContaining('symbol') as string }) as Error,
+    )
+  })
+
+  it('hostile-F12: a non-enumerable audit option and a non-enumerable limit throw bad-options', () => {
+    const before = [{ id: 'a', v: 1, lastReviewed: '2026-01-01' }]
+    const after = [{ id: 'a', v: 1, lastReviewed: '2026-10-01' }]
+    const stamp = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+    const withHiddenIgnore = Object.defineProperty({ ...stamp }, 'ignoreFields', { value: ['updatedAt'], enumerable: false })
+    expect(() => auditReviewStamps(before, after, withHiddenIgnore as StampOptions)).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+    expect(() => compareMirror(canonical, mirror, { limits: hidden('maxNodes', 1) })).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('hostile-F12: ordinary options, an explicit undefined option and an empty options object still work', () => {
+    expect(compareMirror(canonical, mirror, {}).status).toBe('flagged')
+    expect(compareMirror(canonical, mirror, { fields: ['v'] }).status).toBe('ok')
+    expect(compareMirror(canonical, mirror, { fields: undefined } as unknown as MirrorOptions).status).toBe('flagged')
+    expect(compareMirror(canonical, mirror, Object.create(null) as MirrorOptions).status).toBe('flagged')
+  })
+})
+
+describe('hostile-F12: more invisible characters in a key are look-alikes', () => {
+  const invisible: Array<[string, string]> = [
+    ['NUL', '\u0000'],
+    ['bell', '\u0007'],
+    ['DEL', '\u007f'],
+    ['C1 control', '\u0090'],
+    ['tag letter A (U+E0041)', '\u{E0041}'],
+    ['tag cancel (U+E007F)', '\u{E007F}'],
+    ['object replacement (U+FFFC)', '\uFFFC'],
+    ['interlinear annotation anchor (U+FFF9)', '\uFFF9'],
+    ['musical beam start (U+1D173)', '\u{1D173}'],
+    ['musical end phrase (U+1D17A)', '\u{1D17A}'],
+  ]
+
+  for (const [name, ch] of invisible) {
+    it(`hostile-F12: ${name} inside an id makes it a look-alike of the plain id, never a quiet rename`, () => {
+      const r = compareMirror([{ id: 'prog-1', v: 1 }], [{ id: `prog${ch}-1`, v: 1 }])
+      expect(r.suspectKeys).toHaveLength(1)
+      expect(r.status).toBe('flagged')
+      expect(r.missing).toEqual(['prog-1'])
+      expect(r.extra).toEqual([`prog${ch}-1`])
+    })
+
+    it(`hostile-F12: ${name} added to every audited id is reported as look-alikes as well as no overlap`, () => {
+      const before = [{ id: 'a', v: 1, lastReviewed: '2026-01-01' }, { id: 'b', v: 1, lastReviewed: '2026-01-01' }]
+      const after = before.map((r) => ({ ...r, id: `${r.id}${ch}`, lastReviewed: '2026-10-01' }))
+      const r = auditReviewStamps(before, after, { reviewedField: 'lastReviewed', sourceFields: [] })
+      expect(r.ok).toBe(false)
+      expect(r.status).toBe('unknown')
+      expect(r.noOverlap).toBe(true)
+      expect(r.suspectKeys).toHaveLength(2)
+    })
+  }
+
+  it('hostile-F12: ordinary ids, spaces and punctuation are not look-alikes', () => {
+    const r = compareMirror([{ id: 'a b', v: 1 }, { id: 'a-b', v: 1 }, { id: 'a_b', v: 1 }, { id: 'ab', v: 1 }], [{ id: 'a b', v: 1 }, { id: 'a-b', v: 1 }, { id: 'a_b', v: 1 }, { id: 'ab', v: 1 }])
+    expect(r.suspectKeys).toEqual([])
+    expect(r.status).toBe('ok')
+  })
+})

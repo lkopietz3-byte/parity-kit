@@ -2,11 +2,19 @@ import type { InvalidReason, Key, SuspectKeyGroup } from './types.js';
 
 /**
  * Characters that are invisible or purely cosmetic in a key: zero-width and
- * bidi controls, soft hyphen, word joiner, BOM, variation selectors, and the
- * Mongolian free variation selectors. Removed when comparing look-alikes.
+ * bidi controls, soft hyphen, word joiner, BOM, variation selectors, the
+ * Mongolian free variation selectors, C0 and C1 control characters (NUL
+ * included; tab, line breaks and NEL count as whitespace instead), the tag
+ * block (U+E0000 to U+E007F), the object replacement and interlinear
+ * annotation characters, and the musical formatting characters. Removed when
+ * comparing look-alikes.
  */
 function isIgnorable(cp: number): boolean {
   return (
+    (cp >= 0x00 && cp <= 0x08) ||
+    (cp >= 0x0e && cp <= 0x1f) ||
+    cp === 0x7f ||
+    (cp >= 0x80 && cp <= 0x9f && cp !== 0x85) ||
     cp === 0x00ad ||
     cp === 0x034f ||
     cp === 0x061c ||
@@ -21,6 +29,9 @@ function isIgnorable(cp: number): boolean {
     (cp >= 0xfe00 && cp <= 0xfe0f) ||
     cp === 0xfeff ||
     cp === 0xffa0 ||
+    (cp >= 0xfff9 && cp <= 0xfffc) ||
+    (cp >= 0x1d173 && cp <= 0x1d17a) ||
+    (cp >= 0xe0000 && cp <= 0xe007f) ||
     (cp >= 0xe0100 && cp <= 0xe01ef)
   );
 }
