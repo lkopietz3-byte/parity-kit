@@ -5,9 +5,12 @@ declare module 'node:vm' {
   export default vm
 }
 declare module 'node:child_process' {
-  export function execFileSync(file: string, args: string[], options: { encoding: 'utf8'; cwd?: string; input?: string }): string
+  export function execFileSync(file: string, args: string[], options: { encoding: 'utf8'; cwd?: string; input?: string; stdio?: 'pipe' }): string
 }
 declare module 'node:fs' {
+  export function copyFileSync(from: string, to: string): void
+  export function mkdirSync(path: string, options?: { recursive: boolean }): void
+  export function writeFileSync(path: string, data: string): void
   export function mkdtempSync(prefix: string): string
   export function readFileSync(path: string, encoding: 'utf8'): string
   export function rmSync(path: string, options: { recursive: boolean; force: boolean }): void

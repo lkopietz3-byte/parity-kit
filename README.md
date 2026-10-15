@@ -20,11 +20,25 @@ freshness-kit (a sibling kit) scores how old a review date is. This kit asks a d
 
 ## Install
 
+parity-kit is private and not published, so you install it from a checkout. A fresh checkout has no compiler and no `dist/`, so build it once first:
+
 ```sh
-npm install ./parity-kit        # from a local checkout
+cd parity-kit
+npm ci && npm run build         # once, inside the checkout
+cd ../your-project
+npm install ../parity-kit       # then install it from your project
 ```
 
+If you skip the first step the install stops with a message that names these two commands, instead of failing on a missing compiler.
+
 Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
+
+| How you load it | Works on |
+| --- | --- |
+| `import { compareMirror } from 'parity-kit'` | Node 20 and newer |
+| `const { compareMirror } = require('parity-kit')` | Node 20.19 and newer, and Node 22.12 and newer, where `require()` can load an ES module. Not on Node 20.0 to 20.18 or 22.0 to 22.11: use the `import` line, or `await import('parity-kit')` from CommonJS. |
+
+The continuous-integration matrix builds and tests on Node 20, 20.19.0, 22, 22.12.0 and 24.
 
 ## Worked example
 

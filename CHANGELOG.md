@@ -216,3 +216,10 @@ Each has a verdict-table row named for its finding id.
   README states that a three-field record costs about 14 on each side, so the default `maxNodes`
   ends a pair of datasets near 350,000 records before the `maxRecords` default of 1,000,000
   matters. Defaults are unchanged.
+- Install from a fresh checkout (DR-1, DR-10). `npm install ./parity-kit` on a clone used to run a
+  bare build and die with `sh: tsc: command not found` (exit 127), leaving a link to a folder with
+  no `dist/`. `prepare` is now `scripts/prepare.mjs`: it builds when the compiler is installed and
+  otherwise exits 1 with the two commands to run (`npm ci && npm run build`). The README Install
+  section gives those steps in order and adds a table of load methods (`import` on Node 20 and
+  newer; `require()` on Node 20.19 and 22.12 and newer, which are the floors the compatibility
+  matrix pins). The script is not shipped in the tarball and does not run for a tarball install.
