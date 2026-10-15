@@ -3495,3 +3495,52 @@ describe('gate documentation findings: README, METHOD, CHANGELOG and ENGINEERING
     expect(engineering + doc('CONTRIBUTING.md')).toMatch(/pending trusted publisher/)
   })
 })
+
+describe('release-gate:R1: a registry entry reads the same whatever order the Proxy lists its keys', () => {
+  // The id getter sets a flag and the value getter answers 1.25 only after it.
+  // Reading fields in ownKeys order made the answer depend on that order.
+  const make = (order: 'forward' | 'reversed') => {
+    let idRan = false
+    let valueRan = false
+    const target = {
+      get id(): string { idRan = true; return 'a' },
+      get value(): number { valueRan = true; return idRan ? 1.25 : 99 },
+      get forms(): string[] { return idRan && valueRan ? ['one and a quarter'] : [] },
+    }
+    return new Proxy(target, {
+      ownKeys: (t) => (order === 'reversed' ? Reflect.ownKeys(t).reverse() : Reflect.ownKeys(t)),
+    })
+  }
+
+  it.each(['forward', 'reversed'] as const)('release-gate:R1: getters run in the order id, value, forms (%s ownKeys)', (order) => {
+    const hits = findHandTypedConstants('1.25 and one and a quarter', [make(order)])
+    expect(hits.map((h) => h.id)).toEqual(['a', 'a'])
+  })
+
+  it('release-gate:R1: no getter runs before an unknown enumerable key is refused', () => {
+    let runs = 0
+    const target = { get id(): string { runs += 1; return 'a' }, value: 1, oops: 2 }
+    expect(() => findHandTypedConstants('1', [target])).toThrowError(expect.objectContaining({ code: 'bad-registry' }) as Error)
+    expect(runs).toBe(0)
+  })
+})
+
+describe('release-gate:R2: an object-keyed dataset past maxRecords is refused without reading every slot', () => {
+  it('release-gate:R2: 10,000 enumerable keys with maxRecords 1 cost at most two descriptor traps', () => {
+    const data: Record<string, unknown> = {}
+    for (let i = 0; i < 10_000; i += 1) data[`k${i}`] = { v: 1 }
+    let traps = 0
+    const proxy = new Proxy(data, {
+      getOwnPropertyDescriptor(t, k) { traps += 1; return Reflect.getOwnPropertyDescriptor(t, k) },
+    })
+    expect(() => compareMirror(proxy, { a: { v: 1 } }, { limits: { maxRecords: 1 } })).toThrowError(
+      expect.objectContaining({ code: 'too-large' }) as Error,
+    )
+    expect(traps).toBeLessThanOrEqual(2)
+  })
+
+  it('release-gate:R2: exactly maxRecords enumerable keys still compare', () => {
+    const r = compareMirror({ a: { v: 1 }, b: { v: 1 } }, { a: { v: 1 }, b: { v: 1 } }, { limits: { maxRecords: 2 } })
+    expect(r.status).toBe('ok')
+  })
+})

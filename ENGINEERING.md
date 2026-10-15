@@ -58,7 +58,10 @@ imports a `node:` module, so it is browser-safe.
   unknown name, a symbol key, or an own property that is not enumerable. Skipping any of them
   would turn the check it configures off without a word (`fields` defined as non-enumerable
   compared every field). Registry entries are the one place that keeps the older rule: an unknown
-  enumerable key is refused, a hidden or symbol key is not read (two committed rows pin that).
+  enumerable key is refused, a hidden or symbol key is not read (two committed rows pin that). A registry entry's
+  property descriptors are all captured first (no getter runs), an unknown enumerable key is refused,
+  and only then do the getters run, always in the order `id`, `value`, `forms`, so the order a
+  Proxy lists its keys in cannot change what a getter sees (`release-gate:R1`).
 - **Read once, then compare.** A record is read into a snapshot: own enumerable
   string-keyed properties only (or the named own properties), data values
   taken from the descriptor and getters run exactly once, keys sorted so a
@@ -126,7 +129,9 @@ imports a `node:` module, so it is browser-safe.
   `catch` blocks test `isOwnError(value)` (a `WeakSet` membership check, which
   runs no traps) before any `instanceof`, and thrown values are never coerced:
   `describeError` reads only an own data property `message` that is a string.
-- **Bounded work.** `maxRecords` (own enumerable string keys of an id-keyed object),
+- **Bounded work.** `maxRecords` (own enumerable string keys of an id-keyed object; the read stops
+  and throws as soon as the enumerable count passes it, so a refused dataset costs
+  `maxRecords + 1` descriptor reads and not one per key, `release-gate:R2`),
   `maxNodes` (and a lower cap on arrays and
   objects, which allocate) and `maxDepth` (at most 1000) bound every read.
   Recursion happens only after the depth check, so stack use is bounded.

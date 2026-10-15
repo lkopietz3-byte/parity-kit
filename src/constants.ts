@@ -416,23 +416,29 @@ function readRegistry(registry: unknown): Entry[] {
       if (desc === undefined) return bad(`registry[${i}] is an empty slot`);
       const item: unknown = descriptorValue(registry as object, desc);
       if (!isPlainObject(item) || Array.isArray(item)) return bad(`registry[${i}] must be a plain object`);
-      // One descriptor read per own property. The three known names are used
-      // wherever they are; any other enumerable string key is a refusal, so a
-      // misspelled `forms` can never silently drop the forms.
-      let id: unknown;
-      let value: unknown;
-      let formsRaw: unknown;
+      // One descriptor read per own property, all of them before any getter
+      // runs, so the order a Proxy lists its keys in cannot change what a
+      // getter sees. Any other enumerable string key is a refusal (a
+      // misspelled `forms` must never silently drop the forms), and it is
+      // refused before user code runs. The getters then run in a fixed order:
+      // id, value, forms.
+      let idDesc: PropertyDescriptor | undefined;
+      let valueDesc: PropertyDescriptor | undefined;
+      let formsDesc: PropertyDescriptor | undefined;
       for (const name of Reflect.ownKeys(item)) {
         if (typeof name !== 'string') continue;
         const desc = Reflect.getOwnPropertyDescriptor(item, name);
         if (desc === undefined) continue;
-        if (name === 'id') id = descriptorValue(item, desc);
-        else if (name === 'value') value = descriptorValue(item, desc);
-        else if (name === 'forms') formsRaw = descriptorValue(item, desc);
+        if (name === 'id') idDesc = desc;
+        else if (name === 'value') valueDesc = desc;
+        else if (name === 'forms') formsDesc = desc;
         else if (desc.enumerable === true) {
           return bad(`registry[${i}] has an unknown key ${JSON.stringify(shortName(name))}; an entry has only id, value and forms`);
         }
       }
+      const id: unknown = idDesc === undefined ? undefined : descriptorValue(item, idDesc);
+      const value: unknown = valueDesc === undefined ? undefined : descriptorValue(item, valueDesc);
+      const formsRaw: unknown = formsDesc === undefined ? undefined : descriptorValue(item, formsDesc);
       if (typeof id !== 'string' || id === '') return bad(`registry[${i}].id must be a non-empty string`);
       if (ids.has(id)) return bad(`registry has two entries with id "${id}"`);
       ids.add(id);

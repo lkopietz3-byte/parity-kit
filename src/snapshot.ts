@@ -554,6 +554,9 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     if (proto !== null && Reflect.getPrototypeOf(proto) !== null) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id`);
     }
+    if (isBufferView(input)) {
+      throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
+    }
     const keys = Reflect.ownKeys(input);
     // Every own key is looked at (and charged), but only enumerable string keys are records.
     spend(budget, keys.length);
@@ -568,13 +571,18 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
       const desc = Reflect.getOwnPropertyDescriptor(input, key);
       if (desc === undefined) continue;
       if (key === 'constructor') facts.constructorDesc = { desc };
-      if (desc.enumerable === true) slots.push({ id: key, desc });
+      if (desc.enumerable === true) {
+        slots.push({ id: key, desc });
+        // Refuse as soon as the count passes the limit: reading the rest
+        // would cost one descriptor trap per key for a dataset that is
+        // refused anyway.
+        if (slots.length > budget.maxRecords) {
+          throw new ParityError('too-large', `${side} has more than ${budget.maxRecords} records; the limit is limits.maxRecords (${budget.maxRecords})`);
+        }
+      }
     }
-    if (isBufferView(input) || (slots.length === 0 && nativeKind(input, proto, facts) !== undefined)) {
+    if (slots.length === 0 && nativeKind(input, proto, facts) !== undefined) {
       throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
-    }
-    if (slots.length > budget.maxRecords) {
-      throw new ParityError('too-large', `${side} has ${slots.length} records; the limit is limits.maxRecords (${budget.maxRecords})`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const { id, desc } of slots) {
