@@ -2667,3 +2667,130 @@ describe('hostile-F12: more invisible characters in a key are look-alikes', () =
     expect(r.status).toBe('ok')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Triage of the unverified P3 items: each behavior below is stated in the
+// README, so each is pinned here. These rows pass on the current build; they
+// exist so the README sentence cannot become false unnoticed.
+// ---------------------------------------------------------------------------
+
+describe('PF-10 / PK4-6: record order is not compared, and report order follows the input form', () => {
+  it('PF-10: a mirror array in another order is ok, so a ranking has to live in a field', () => {
+    const canonical = [{ id: 'a', rank: 1 }, { id: 'b', rank: 2 }, { id: 'c', rank: 3 }]
+    expect(compareMirror(canonical, [...canonical].reverse()).status).toBe('ok')
+    expect(compareMirror(canonical, [{ id: 'a', rank: 3 }, { id: 'b', rank: 2 }, { id: 'c', rank: 1 }]).changed.map((c) => c.field)).toEqual(['rank', 'rank'])
+  })
+
+  it('PK4-6: array input reports in input order, object input in sorted key order, with the same content', () => {
+    const rows = (v: number): Array<{ id: string; v: number }> => [{ id: 'b', v }, { id: 'a', v }, { id: 'c', v }]
+    const asObject = (v: number): Record<string, { v: number }> => ({ b: { v }, a: { v }, c: { v } })
+    const fromArray = compareMirror(rows(1), rows(2))
+    const fromObject = compareMirror(asObject(1), asObject(2))
+    expect(fromArray.changed.map((c) => c.id)).toEqual(['b', 'a', 'c'])
+    expect(fromObject.changed.map((c) => c.id)).toEqual(['a', 'b', 'c'])
+    expect([...fromArray.changed].sort((x, y) => (x.id < y.id ? -1 : 1))).toEqual(fromObject.changed)
+    expect(compareMirror([{ id: 'b' }, { id: 'a' }], [{ id: 'z' }]).missing).toEqual(['b', 'a'])
+    expect(compareMirror({ b: {}, a: {} }, { z: {} }).missing).toEqual(['a', 'b'])
+  })
+})
+
+describe('PF-11 / PF-14 / PF-15: number tolerance scope, Date against its ISO string, doubles', () => {
+  it('PF-11: one absolute tolerance applies to every field, and one call per scale keeps a small rate strict', () => {
+    const canonical = [{ id: 'x', cpp: 1.25, feeRate: 0.015 }]
+    const mirror = [{ id: 'x', cpp: 1.251, feeRate: 0.02 }]
+    expect(compareMirror(canonical, mirror, { numberTolerance: 0.01 }).status).toBe('ok')
+    expect(compareMirror(canonical, mirror, { fields: ['cpp'], numberTolerance: 0.01 }).status).toBe('ok')
+    expect(compareMirror(canonical, mirror, { fields: ['feeRate'], numberTolerance: 0.0001 }).status).toBe('flagged')
+  })
+
+  it('PF-14: a Date is different from its ISO string, and the report holds a Date next to a string', () => {
+    const r = compareMirror([{ id: 'a', d: new Date('2026-06-08') }], [{ id: 'a', d: '2026-06-08T00:00:00.000Z' }])
+    expect(r.status).toBe('flagged')
+    const change = r.changed[0]
+    expect(change?.canonical).toBeInstanceOf(Date)
+    expect(typeof change?.mirror).toBe('string')
+    expect(compareMirror([{ id: 'a', d: new Date('2026-06-08') }], [{ id: 'a', d: new Date('2026-06-08').toISOString() as unknown as Date }]).status).toBe('flagged')
+  })
+
+  it('PF-15: integers past 2^53 that parsed to one double compare equal, as strings they differ', () => {
+    const parse = (text: string): unknown => JSON.parse(text) as unknown
+    expect(compareMirror(parse('[{"id":"a","n":12345678901234567890}]'), parse('[{"id":"a","n":12345678901234567891}]')).status).toBe('ok')
+    expect(compareMirror([{ id: 'a', n: '12345678901234567890' }], [{ id: 'a', n: '12345678901234567891' }]).status).toBe('flagged')
+  })
+})
+
+describe('PF-12 / PF-13 / DR-11 / PF-15: review-stamp rules that read as surprises are pinned', () => {
+  const opts = { reviewedField: 'lastReviewed', sourceFields: [] } satisfies StampOptions
+  const one = (date: string): Array<{ id: string; v: number; lastReviewed: string }> => [{ id: 'a', v: 1, lastReviewed: date }]
+  const many = (n: number, date: (i: number) => string, note = 'x'): Array<{ id: string; note: string; lastReviewed: string }> =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${i}`, note, lastReviewed: date(i) }))
+
+  it('PF-12: a same-day format rewrite is a move of the instant: later is stampOnly, earlier is backward', () => {
+    const later = auditReviewStamps(one('2026-06-08'), one('2026-06-08T09:00:00-05:00'), opts)
+    expect(later.stampOnly.map((e) => e.id)).toEqual(['a'])
+    const earlier = auditReviewStamps(one('2026-06-08T12:00:00Z'), one('2026-06-08'), opts)
+    expect(earlier.backward.map((e) => e.id)).toEqual(['a'])
+    expect(auditReviewStamps(one('2026-06-08'), one('2026-06-08T00:00:00Z'), opts).status).toBe('ok')
+  })
+
+  it('PF-13: bulkBump groups by the UTC day of the new stamp, so one local day across UTC midnight splits', () => {
+    const before = many(12, () => '2026-01-01')
+    const straddle = many(12, (i) => (i < 6 ? '2026-06-08T18:50:00-05:00' : '2026-06-08T19:10:00-05:00'), 'y')
+    const split = auditReviewStamps(before, straddle, opts)
+    expect(split.bulkBump).toEqual([])
+    expect(split.status).toBe('ok')
+    const oneDay = auditReviewStamps(before, many(12, () => '2026-06-08', 'y'), opts)
+    expect(oneDay.bulkBump.map((b) => [b.count, b.withEvidence, b.withoutEvidence])).toEqual([[12, 12, 0]])
+    expect(auditReviewStamps(before, straddle, { ...opts, bulkThreshold: 5 }).bulkBump.map((b) => b.count)).toEqual([6, 6])
+  })
+
+  it('DR-11 / PF-15: a file-level date copied onto every record makes the unchanged records stampOnly', () => {
+    const file = (reviewed: string, changed: boolean): { reviewed: string; programs: Array<{ id: string; v: number }> } => ({
+      reviewed,
+      programs: Array.from({ length: 12 }, (_, i) => ({ id: `p${i}`, v: i === 0 && changed ? 99 : i })),
+    })
+    const stamp = (f: ReturnType<typeof file>): Array<{ id: string; v: number; reviewed: string }> => f.programs.map((p) => ({ ...p, reviewed: f.reviewed }))
+    const r = auditReviewStamps(stamp(file('2026-01-01', false)), stamp(file('2026-10-01', true)), { reviewedField: 'reviewed', sourceFields: [] })
+    expect(r.status).toBe('flagged')
+    expect(r.stampOnly).toHaveLength(11)
+    expect(r.bulkBump.map((b) => [b.count, b.withEvidence, b.withoutEvidence])).toEqual([[12, 1, 11]])
+  })
+})
+
+describe('PK4-7: the accepted offset range and ASCII-only digits', () => {
+  const reason = (date: string): string | undefined => {
+    const r = auditReviewStamps([{ id: 'a', v: 1, lastReviewed: '2026-01-01' }], [{ id: 'a', v: 1, lastReviewed: date }], { reviewedField: 'lastReviewed', sourceFields: [] })
+    return r.unknown[0]?.reason
+  }
+
+  it('PK4-7: offsets from -23:59 to +23:59 parse, and -00:00 parses', () => {
+    for (const date of ['2026-06-08T00:00:00+23:59', '2026-06-08T00:00:00-23:59', '2026-06-08T00:00:00-00:00']) expect(reason(date)).toBeUndefined()
+  })
+
+  it('PK4-7: an offset outside the range, without a colon, or with a bad minute is unparseable, never a pass', () => {
+    for (const date of ['2026-06-08T00:00:00+24:00', '2026-06-08T00:00:00+05:60', '2026-06-08T00:00:00+0530', '2026-06-08T00:00:00+05', '2026-06-08T00:00:00.1234567891Z']) {
+      expect(reason(date)).toBe('unparseable-date')
+    }
+  })
+
+  it('PK4-7: full-width digits are not a date', () => {
+    expect(reason('２０２６-06-02')).toBe('unparseable-date')
+  })
+})
+
+describe('hostile-F12 / hostile-F10: documented limits of what is read and what a registry costs', () => {
+  it('hostile-F12: named properties on an array are ignored, a hidden id still identifies, hidden other fields are not read', () => {
+    expect(compareMirror([{ id: 'a', v: [1] }], [{ id: 'a', v: Object.assign([1], { x: 1 }) }]).status).toBe('ok')
+    const hiddenId = { v: 1 }
+    Object.defineProperty(hiddenId, 'id', { value: 'a', enumerable: false })
+    expect(compareMirror([hiddenId], [{ id: 'a', v: 1 }]).status).toBe('ok')
+    const hiddenField = { id: 'a', v: 1 }
+    Object.defineProperty(hiddenField, 'w', { value: 1, enumerable: false })
+    expect(compareMirror([hiddenField], [{ id: 'a', v: 1, w: 2 }]).changed.map((c) => [c.field, c.change])).toEqual([['w', 'extra-in-mirror']])
+  })
+
+  it('hostile-F10: one value registered under k ids returns k hits per occurrence, so hits are registry size times occurrences', () => {
+    const registry = Array.from({ length: 40 }, (_, i) => ({ id: `c${i}`, value: 1.25 }))
+    expect(findHandTypedConstants('1.25 and 1.25', registry)).toHaveLength(80)
+  })
+})

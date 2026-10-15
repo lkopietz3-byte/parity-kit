@@ -248,3 +248,22 @@ Each has a verdict-table row named for its finding id.
   against `prog<NUL>-1` is reported in `suspectKeys` as well as `missing` and `extra`. This can
   only add `suspectKeys` entries (status `unknown` instead of `ok`, never the other way). A Greek
   alpha, a small-capital `A`, `1` for `l` and `rn` for `m` stay unfolded and are documented.
+- Triage of the remaining unverified items. Each was reproduced first. None changes a verdict;
+  each README statement is pinned by a row named for its id.
+  - Documented (PF-10, PK4-6, PF-11, PF-14, PF-15, DR-11, PF-12, PF-13, PK4-7): record order is
+    not compared; report order follows the input form (input order for arrays, sorted keys for an
+    id-keyed object); `numberTolerance` is one absolute number for every field (use one call per
+    scale); a `Date` never equals its ISO string; numbers are 64-bit floating point, so integers
+    past 2^53 that `JSON.parse` already merged are equal; the file-level date recipe turns every
+    unchanged record into a `stampOnly` entry when the file date moves; a same-day format rewrite
+    is a move of the instant; `bulkBump` groups by the UTC day of the new stamp and a bump spread
+    over two UTC days can stay under the threshold; the accepted offset range is 00:00 to 23:59
+    and only ASCII digits spell a date.
+  - Documented, not changed (hostile-F10): a registry has no cap beyond 1,000,000 entries and
+    10,000 forms per entry, and its cost is hits (registry size times occurrences) plus boundary
+    checks on nested prefixes. The README gives measured figures. The registry is trusted
+    configuration, and a cap would be a new option, so none was added.
+  - Documented, not changed (hostile-F12): named properties on an array and a hidden key property
+    are not refused, and registry entries keep their rule (a hidden or symbol key is not read).
+    Two earlier rows pin that rule, and a hidden key cannot hide a misspelling that a person
+    would type.
