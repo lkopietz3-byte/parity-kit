@@ -265,7 +265,7 @@ describe('README code blocks', () => {
     })
     // The shell blocks are install and project commands. They are listed so a new one has to be looked at.
     const shell = blocks.filter((b) => b.lang === 'sh').map((b) => b.code.trim().split('\n')[0])
-    expect(shell).toEqual(['npm install ./parity-kit        # from a local checkout', 'npm ci'])
+    expect(shell).toEqual(['cd parity-kit', 'npm ci'])
     expect(blocks.filter((b) => b.lang === 'json')).toHaveLength(1)
     expect(blocks.filter((b) => !['ts', 'sh', 'json'].includes(b.lang))).toEqual([])
   })
