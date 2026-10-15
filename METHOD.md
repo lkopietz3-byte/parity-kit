@@ -45,7 +45,7 @@ all is reported.
 | `changed` | A compared field differs (`different`, `missing-in-mirror`, `extra-in-mirror`). | Exact comparison is the only rule that cannot hide a change. | `fields`, `ignoreFields`, `numberTolerance`. |
 | `stampHidesDrift` | Both copies carry the same review date and other fields differ. | A shared date on top of a mismatch makes the date vouch for it. | Needs `reviewedField`. Leave it unset to turn this off. |
 | `duplicateKeys` | One key is used by more than one record on a side. | Which record is meant is not knowable. Those records are not compared but still count as present. | Fix the data. |
-| `suspectKeys` | Two keys look alike but are not identical. | A renamed key (a trailing zero-width character, a Cyrillic letter) must not be merged silently. The status is `unknown`. | `foldCase: false` stops grouping keys that differ only by case. |
+| `suspectKeys` | Two keys look alike but are not identical. | A renamed key (a trailing zero-width character, a Cyrillic letter) must not be merged silently. The status is `unknown`. | `foldCase: false` stops grouping keys that differ only by case. `foldInvisible: false` stops grouping keys that differ only by an invisible character (emoji sequences, a control-character separator in a composite id). |
 | `unknownFields` | A name you gave in `fields`, `ignoreFields` or `reviewedField` is in no record. | A misspelled name would otherwise compare nothing. | Correct the name. |
 | `noFieldsCompared` | Records matched but `ignoreFields` removed every field they carry. The key column does not count as a field, so naming the key in `fields` does not avoid it. | A run that checked nothing is not a pass. | Narrow `ignoreFields`. Records that carry only an id are an honest presence check and do not set this. |
 | `invalid` | A record or dataset could not be read, with a reason. | One bad record must not hide the others, and must not pass. | Fix the record. `allowEmpty: true` accepts an empty canonical set. |
@@ -78,6 +78,7 @@ copies" look the same as "the registry file failed to load".
 | `fields` | Every own enumerable field of either record | A field added on one side is drift. | Pass `fields`. It must name at least one field not in `ignoreFields`. |
 | `numberTolerance` | `0` (exact) | Any tolerance waives real changes. | Pass a number. It is one absolute number for every compared field, so use one call per scale. |
 | `foldCase` | `true` | Keys that differ only by case are usually the same key, typed twice. | `foldCase: false` for key sets where case carries meaning, such as HTML entity names. |
+| `foldInvisible` | `true` | A zero-width space or a variation selector on the end of a key is invisible to a person, so the renamed key must not be merged silently. | `foldInvisible: false` for key sets that carry invisible characters on purpose, such as emoji sequences or composite ids joined by a control character. A stray invisible character then shows as `missing` plus `extra`. |
 | `allowEmpty` | `false` | An empty file loaded by mistake would otherwise pass. | `allowEmpty: true`. |
 | `now` | none | The kit never reads the clock. | Pass a `Date`, epoch milliseconds or an ISO timestamp with a zone, in the years 0001 to 9999. A number outside that range (epoch microseconds or nanoseconds) throws instead of turning the future check off. |
 | `bulkThreshold` | `10` | The owner's choice. More than ten records moving to one new day is the point where a person should look. It is not derived from data. | Pass `bulkThreshold`. Lower it if your bumps are smaller. |
@@ -141,6 +142,7 @@ These rules are covered by unit tests but have no labeled real-data
 measurement, so no error rate is claimed for them:
 
 - `reviewerField` counting a name change as evidence.
+- `foldInvisible: false`.
 - `expiryField` and `extendedDeadlines`.
 - `noOverlap`, `noFieldsCompared`, and the empty-dataset and `invalid` reasons.
 - Whether an `unknown` result is common on your own data. It depends on how

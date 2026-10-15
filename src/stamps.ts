@@ -38,6 +38,8 @@ export interface StampOptions {
   allowEmpty?: boolean;
   /** Fold upper and lower case when looking for look-alike keys. Default true. */
   foldCase?: boolean;
+  /** Remove invisible characters (zero-width characters, variation selectors, joiners, tag characters, control characters) when looking for look-alike keys. Default true. Pass false for key sets that legitimately carry them, such as emoji sequences or ids joined by a control-character separator. */
+  foldInvisible?: boolean;
   limits?: Limits;
 }
 
@@ -146,7 +148,7 @@ export interface StampAudit {
 const WHAT = 'auditReviewStamps';
 const OPTION_NAMES = [
   'key', 'reviewedField', 'sourceFields', 'reviewerField', 'expiryField', 'valueFields', 'ignoreFields',
-  'now', 'bulkThreshold', 'allowEmpty', 'foldCase', 'limits',
+  'now', 'bulkThreshold', 'allowEmpty', 'foldCase', 'foldInvisible', 'limits',
 ];
 const DEFAULT_BULK_THRESHOLD = 10;
 
@@ -214,6 +216,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
   const ignoreFields = optNames(o, 'ignoreFields', WHAT) ?? [];
   const allowEmpty = optBoolean(o, 'allowEmpty', WHAT) ?? false;
   const foldCase = optBoolean(o, 'foldCase', WHAT) ?? true;
+  const foldInvisible = optBoolean(o, 'foldInvisible', WHAT) ?? true;
   const nowMs = readNow(o['now']);
   const thresholdRaw = o['bulkThreshold'];
   if (
@@ -380,7 +383,7 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
       { side: 'before', keys: bi.order },
       { side: 'after', keys: ai.order },
     ],
-    foldCase,
+    { foldCase, foldInvisible },
   );
 
   const flagged =

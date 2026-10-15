@@ -3162,3 +3162,87 @@ describe('gate-false-pass:GFP-02: a key is charged by what normalizing it costs,
     expect(long.suspectKeys[0]?.skeleton).toMatch(/\.\.\. \(500 units\)$/)
   })
 })
+
+describe('gate-hostile:F4 / gate-review:F8: foldInvisible: false keeps keys that differ only by an invisible character', () => {
+  const emoji = [
+    { id: '❤', name: 'red heart (text style)' },
+    { id: '❤️', name: 'red heart (emoji style)' },
+    { id: '\u{1F441}', name: 'eye' },
+    { id: '\u{1F441}️', name: 'eye (emoji style)' },
+    { id: '\u{1F468}‍\u{1F469}‍\u{1F467}', name: 'family' },
+    { id: '\u{1F468}\u{1F469}\u{1F467}', name: 'man, woman, girl' },
+    { id: '\u{1F3F4}', name: 'black flag' },
+    { id: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}', name: 'England' },
+    { id: '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', name: 'Scotland' },
+  ]
+  const copy = <T extends object>(list: T[]): T[] => list.map((r) => ({ ...r }))
+
+  it('gate-hostile:F4: by default an emoji table is look-alike keys, even against a byte-identical copy (documented)', () => {
+    const r = compareMirror(emoji, copy(emoji))
+    expect(r.status).toBe('unknown')
+    expect(r.suspectKeys).toHaveLength(4)
+  })
+
+  it('gate-hostile:F4: foldInvisible: false makes a byte-identical copy of the emoji table ok', () => {
+    const r = compareMirror(emoji, copy(emoji), { foldInvisible: false })
+    expect(r.status).toBe('ok')
+    expect(r.ok).toBe(true)
+    expect(r.suspectKeys).toEqual([])
+    expect(r.compared).toBe(9)
+  })
+
+  it('gate-hostile:F4: with it off, real drift in the table is still flagged', () => {
+    const drifted = copy(emoji)
+    ;(drifted[1] as { name: string }).name = 'changed'
+    const r = compareMirror(emoji, drifted, { foldInvisible: false })
+    expect(r.status).toBe('flagged')
+    expect(r.changed.map((c) => c.field)).toEqual(['name'])
+  })
+
+  it('gate-hostile:F4: with it off, a key that gained an invisible character is missing plus extra, never a pass', () => {
+    const r = compareMirror([{ id: 'a', v: 1 }], [{ id: 'a​', v: 1 }], { foldInvisible: false })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('flagged')
+    expect(r.missing).toEqual(['a'])
+    expect(r.extra).toEqual(['a​'])
+    expect(r.suspectKeys).toEqual([])
+  })
+
+  it('gate-hostile:F4: with it off, the other folds still apply (NFC against NFD, case, no-break space)', () => {
+    expect(compareMirror([{ id: 'café' }, { id: 'café' }], [{ id: 'café' }, { id: 'café' }], { foldInvisible: false }).suspectKeys).toHaveLength(1)
+    expect(compareMirror([{ id: 'A' }, { id: 'a' }], [{ id: 'A' }, { id: 'a' }], { foldInvisible: false }).suspectKeys).toHaveLength(1)
+    expect(compareMirror([{ id: 'x y' }, { id: 'x y' }], [{ id: 'x y' }, { id: 'x y' }], { foldInvisible: false }).suspectKeys).toHaveLength(1)
+  })
+
+  it('gate-review:F8: composite ids joined by U+001F are distinct keys with foldInvisible: false', () => {
+    const rows = [{ id: 'us\u001f10001', v: 1 }, { id: 'us1\u001f0001', v: 2 }]
+    const dflt = compareMirror(rows, copy(rows))
+    expect(dflt.status).toBe('unknown')
+    expect(dflt.suspectKeys).toHaveLength(1)
+    const off = compareMirror(rows, copy(rows), { foldInvisible: false })
+    expect(off.status).toBe('ok')
+  })
+
+  it('gate-hostile:F4: the audit takes the same option', () => {
+    const snapshot = (date: string): Array<{ id: string; note: string; lastReviewed: string }> =>
+      emoji.map((r) => ({ id: r.id, note: r.name, lastReviewed: date }))
+    const opts = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+    expect(auditReviewStamps(snapshot('2026-01-01'), snapshot('2026-01-01'), opts).status).toBe('unknown')
+    const off = auditReviewStamps(snapshot('2026-01-01'), snapshot('2026-01-01'), { ...opts, foldInvisible: false })
+    expect(off.status).toBe('ok')
+    expect(off.suspectKeys).toEqual([])
+  })
+
+  it('gate-hostile:F4: a non-boolean foldInvisible throws bad-options in both functions', () => {
+    expect(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { foldInvisible: 'no' } as unknown as MirrorOptions)).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+    expect(() =>
+      auditReviewStamps([{ id: 'a', lastReviewed: '2026-01-01' }], [{ id: 'a', lastReviewed: '2026-01-01' }], {
+        reviewedField: 'lastReviewed',
+        sourceFields: [],
+        foldInvisible: 0,
+      } as unknown as StampOptions),
+    ).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+})

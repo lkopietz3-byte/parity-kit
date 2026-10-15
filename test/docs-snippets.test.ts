@@ -193,6 +193,18 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
+    starts: "const hearts = [",
+    prelude: IMPORT_MIRROR,
+    suffix: 'export { exact, hearts };',
+    check: ({ first }) => {
+      expect((first.out['exact'] as MirrorResult).ok).toBe(true)
+      const hearts = first.out['hearts'] as Array<Record<string, unknown>>
+      const folded = api.compareMirror(hearts, hearts.map((h) => ({ ...h })))
+      expect(folded.status).toBe('unknown')
+      expect(folded.suspectKeys).toHaveLength(1)
+    },
+  },
+  {
     starts: "import type { MirrorResult } from 'parity-kit';",
     prelude: '',
     suffix: 'export { acceptKnownTwins, knownTwins };',

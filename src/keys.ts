@@ -69,24 +69,32 @@ const CONFUSABLES: ReadonlyMap<number, string> = new Map<number, string>([
   [0x03c1, 'p'], [0x0501, 'd'], [0x051b, 'q'], [0x051d, 'w'],
 ]);
 
+/** Which folds `keySkeleton` applies on top of normalization, whitespace, dashes and the look-alike letters. */
+export interface KeyFolding {
+  /** Fold upper and lower case. */
+  foldCase: boolean;
+  /** Remove invisible characters (zero-width, variation selectors, controls, tags). */
+  foldInvisible: boolean;
+}
+
 /**
  * The form a key takes when everything a person cannot see or cannot tell
  * apart is folded away: compatibility normalization (NFKC, so NFD and NFC
  * agree, as do full-width letters and ligatures), invisible characters
- * removed, runs of whitespace (including no-break spaces) turned into one
- * space and trimmed at both ends, dash variants turned into "-", case folded
- * (unless foldCase is false), and a short list of look-alike letters mapped.
- * Linear in the length of the key.
+ * removed (unless foldInvisible is false), runs of whitespace (including
+ * no-break spaces) turned into one space and trimmed at both ends, dash
+ * variants turned into "-", case folded (unless foldCase is false), and a
+ * short list of look-alike letters mapped. Linear in the length of the key.
  */
-export function keySkeleton(key: Key, foldCase: boolean): string {
+export function keySkeleton(key: Key, folding: KeyFolding): string {
   let text = String(key);
   text = text.normalize('NFKC');
-  if (foldCase) text = text.toLowerCase();
+  if (folding.foldCase) text = text.toLowerCase();
   const parts: string[] = [];
   let pendingSpace = false;
   for (const ch of text) {
     const cp = ch.codePointAt(0) as number;
-    if (isIgnorable(cp)) continue;
+    if (folding.foldInvisible && isIgnorable(cp)) continue;
     if (isWhitespace(cp)) {
       pendingSpace = parts.length > 0;
       continue;
@@ -107,7 +115,7 @@ export function keySkeleton(key: Key, foldCase: boolean): string {
  */
 export function findSuspectKeys(
   datasets: ReadonlyArray<{ side: string; keys: Iterable<Key> }>,
-  foldCase: boolean,
+  folding: KeyFolding,
 ): SuspectKeyGroup[] {
   interface Group {
     skeleton: string;
@@ -120,7 +128,7 @@ export function findSuspectKeys(
     for (const key of keys) {
       let skeleton = cache.get(key);
       if (skeleton === undefined) {
-        skeleton = keySkeleton(key, foldCase);
+        skeleton = keySkeleton(key, folding);
         cache.set(key, skeleton);
       }
       let group = groups.get(skeleton);

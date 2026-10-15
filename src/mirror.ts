@@ -34,6 +34,8 @@ export interface MirrorOptions {
   allowEmpty?: boolean;
   /** Fold upper and lower case when looking for look-alike keys. Default true. */
   foldCase?: boolean;
+  /** Remove invisible characters (zero-width characters, variation selectors, joiners, tag characters, control characters) when looking for look-alike keys. Default true. Pass false for key sets that legitimately carry them, such as emoji sequences or ids joined by a control-character separator; keys that differ only by an invisible character are then different keys, and a renamed one still shows as `missing` plus `extra`. */
+  foldInvisible?: boolean;
   limits?: Limits;
 }
 
@@ -91,7 +93,7 @@ export interface MirrorResult {
 
 const WHAT = 'compareMirror';
 const OPTION_NAMES = [
-  'key', 'fields', 'ignoreFields', 'reviewedField', 'numberTolerance', 'allowEmpty', 'foldCase', 'limits',
+  'key', 'fields', 'ignoreFields', 'reviewedField', 'numberTolerance', 'allowEmpty', 'foldCase', 'foldInvisible', 'limits',
 ];
 
 export interface Indexed {
@@ -246,6 +248,7 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
   const tolerance = readTolerance(o, WHAT);
   const allowEmpty = optBoolean(o, 'allowEmpty', WHAT) ?? false;
   const foldCase = optBoolean(o, 'foldCase', WHAT) ?? true;
+  const foldInvisible = optBoolean(o, 'foldInvisible', WHAT) ?? true;
   const budget: Budget = makeBudget(o['limits'], WHAT);
 
   let names: string[] | null = null;
@@ -333,7 +336,7 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
       { side: 'canonical', keys: ci.order },
       { side: 'mirror', keys: mi.order },
     ],
-    foldCase,
+    { foldCase, foldInvisible },
   );
 
   const unknownFields = findUnknownFields(

@@ -11,7 +11,7 @@ imports a `node:` module, so it is browser-safe.
   fields, nested values) and compares snapshots. Everything that touches a
   caller's object lives here.
 - `src/options.ts` reads and validates option objects and size budgets.
-- `src/keys.ts` finds look-alike keys.
+- `src/keys.ts` finds look-alike keys. `foldCase` and `foldInvisible` turn two of its folds off.
 - `src/dates.ts` is the strict ISO 8601 parser (no `Date` parsing).
 - `src/mirror.ts`, `src/constants.ts`, `src/stamps.ts` are the three public
   functions.

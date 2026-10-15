@@ -195,6 +195,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this, plus a rounding allowance of at most a thousandth of the tolerance (see How values are compared). One absolute number for every number in every compared field, so it also waives small real changes in small-scale fields (see How values are compared). |
 | `allowEmpty` | `false` | Let an empty canonical set pass. |
 | `foldCase` | `true` | Fold upper and lower case when looking for look-alike keys. |
+| `foldInvisible` | `true` | Remove invisible characters (zero-width characters, variation selectors, joiners, tag characters, control characters) when looking for look-alike keys. `false` keeps them, for key sets that carry them on purpose (see Recipes). |
 | `limits` | see Limits | `maxRecords`, `maxNodes`, `maxDepth`, `maxKeyLength`. |
 
 Returns:
@@ -236,7 +237,7 @@ Compares two snapshots of the same dataset.
 | `ignoreFields` | none | Fields that never count as evidence, such as an automatic `updatedAt`. A name that appears in no record lands in `unknownFields`. |
 | `now` | none | A `Date`, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone. Without it, future dates are not checked and no clock is read. |
 | `bulkThreshold` | `10` | A bulk bump is more than this many records moving to one new day. |
-| `key`, `allowEmpty`, `foldCase`, `limits` | as above | |
+| `key`, `allowEmpty`, `foldCase`, `foldInvisible`, `limits` | as above | |
 
 Returns `ok`, `status`, `compared`, and:
 
@@ -293,7 +294,7 @@ Returns `ok`, `status`, `compared`, and:
 ### Keys
 
 - A key is a non-empty (not all whitespace) string or a finite number. `1` and `"1"` are different keys. Keys are compared exactly.
-- A key that looks like another key but is not identical is listed in `suspectKeys` and **never merged**. Two keys look alike when they match after: NFKC normalization (so NFC and NFD agree, as do full-width letters and ligatures), removing zero-width, bidi and other invisible characters (control characters such as NUL and DEL, the tag block U+E0000 to U+E007F, U+FFFC and the musical formatting characters included), collapsing runs of whitespace (including no-break spaces) to one space and trimming, turning dash variants into `-`, folding case (unless `foldCase: false`), and mapping a short list of Cyrillic and Greek lowercase letters that are drawn like Latin ones (`а е о р с у х ѕ і ј һ к ο ν ι ρ` and a few more). The list is short on purpose and is not the full Unicode confusables table: a Greek alpha for `a`, a small-capital `A`, a digit `1` for `l` or the pair `rn` for `m` are not folded, so such a pair shows up as `missing` and `extra` and not as `suspectKeys`.
+- A key that looks like another key but is not identical is listed in `suspectKeys` and **never merged**. Two keys look alike when they match after: NFKC normalization (so NFC and NFD agree, as do full-width letters and ligatures), removing zero-width, bidi and other invisible characters (control characters such as NUL, U+001F and DEL, the variation selectors, the zero-width joiner, the tag block U+E0000 to U+E007F, U+FFFC and the musical formatting characters included; `foldInvisible: false` turns this step off), collapsing runs of whitespace (including no-break spaces) to one space and trimming, turning dash variants into `-`, folding case (unless `foldCase: false`), and mapping a short list of Cyrillic and Greek lowercase letters that are drawn like Latin ones (`а е о р с у х ѕ і ј һ к ο ν ι ρ` and a few more). The list is short on purpose and is not the full Unicode confusables table: a Greek alpha for `a`, a small-capital `A`, a digit `1` for `l` or the pair `rn` for `m` are not folded, so such a pair shows up as `missing` and `extra` and not as `suspectKeys`.
 - A number key and its string form (`1` and `"1"`) look alike by this rule.
 - A renamed NFD key therefore shows up three ways: `missing`, `extra` and `suspectKeys`.
 - A key used twice on one side is a `duplicateKey`. That id is not compared field by field, but it still counts as present, so it is never reported as missing.
@@ -468,6 +469,16 @@ By default two keys that differ only by case (`&AElig;` and `&aelig;`) are look-
 const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }];
 const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCase: false });
 // strict.ok is true; without foldCase: false the result is unknown with one suspectKeys group
+```
+
+### Emoji keys, and ids with an invisible separator
+
+By default the variation selectors, the zero-width joiner and the tag characters that build emoji sequences are invisible, so a text heart (U+2764) and an emoji heart (U+2764 U+FE0F) are look-alikes and the result is `unknown`, even against a byte-identical copy. The same goes for composite ids joined by a control character (`us` U+001F `10001` and `us1` U+001F `0001` both collapse to `us10001`). When such keys are what your data is made of, pass `foldInvisible: false`: keys that differ only by an invisible character are then different keys. The trade-off: a key that gains a stray zero-width space is no longer grouped as a look-alike, but it still shows up as `missing` plus `extra`, so nothing passes. NFKC, case, whitespace and dash folding still apply.
+
+```ts
+const hearts = [{ id: '\u2764', name: 'red heart' }, { id: '\u2764\ufe0f', name: 'red heart, emoji style' }];
+const exact = compareMirror(hearts, hearts.map((h) => ({ ...h })), { foldInvisible: false });
+// exact.ok is true; without foldInvisible: false the two hearts are one suspectKeys group and the result is unknown
 ```
 
 ### Known look-alike keys and known findings
