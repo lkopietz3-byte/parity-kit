@@ -40,6 +40,8 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+      - name: Benchmark (every labeled item must keep its pinned verdict)
+        run: node bench/run.mjs --check --quiet
       - name: Check types (attw)
         run: npm run attw
       - name: Verify the installable package

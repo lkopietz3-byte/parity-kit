@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "note": "Every source behind the benchmark: where it came from, at which revision, under what license, and what (if anything) of it is stored in this repository. Licenses are as reported by the source's own repository or registry page on 2026-10-12 to 2026-10-14; none was checked by a lawyer. A source is vendored only when what is stored is derived (keys, names, flags, digests) and the license allows redistribution with attribution. AGPL-3.0 sources are not vendored at all: bench/fetch/fetch.mjs downloads them at a pinned commit and refuses any file whose SHA-256 differs from bench/fetch/manifest.json.",
+  "vendored": [
+    {
+      "id": "excalidraw-locales",
+      "used_for": "compareMirror/i18n-excalidraw",
+      "url": "https://github.com/excalidraw/excalidraw",
+      "path": "packages/excalidraw/locales",
+      "commit": "541653c7c9d587d463a47daacff9fb30e45a52e7",
+      "license": "MIT",
+      "stored": "message keys, and per string the placeholder names, tag names and URLs found in it (data/i18n-excalidraw.json.gz). No translated text.",
+      "attribution": "Copyright (c) 2020 Excalidraw, MIT License"
+    },
+    {
+      "id": "jitsi-meet-lang",
+      "used_for": "compareMirror/i18n-jitsi",
+      "url": "https://github.com/jitsi/jitsi-meet",
+      "path": "lang",
+      "commit": "36d4c1c7945016ecc588338ac0dff82cd060bbbf",
+      "license": "Apache-2.0",
+      "stored": "message keys, and per string the placeholder names, tag names and URLs found in it (data/i18n-jitsi.json.gz). URLs are facts about the string, not translated text. No translated text.",
+      "attribution": "Jitsi Meet contributors, Apache License 2.0"
+    },
+    {
+      "id": "pypa-advisory-database",
+      "used_for": "auditReviewStamps/pypa-history, pypa-injected, pypa-option-variants; compareMirror/pypa-vs-osv; findHandTypedConstants/advisory-texts",
+      "url": "https://github.com/pypa/advisory-database",
+      "path": "vulns/",
+      "head": "b82eda8f436221a79692a481dbe9749cfeefbe2f",
+      "history_window": "2026-01-12 to 2026-10-09 (one snapshot per day from 2026-07-01, plus 2026-01-12 and 2026-04-12)",
+      "license": "CC-BY-4.0",
+      "stored": "per advisory version: the id, the `modified` stamp as written, and a 12-hex-digit digest of every other top-level field (data/stamps-history.json.gz, stamps-injected.json.gz, advisories-vs-osv.json.gz). For the hand-typed-constant family, 400 advisory `details` texts (data/constants.json.gz).",
+      "attribution": "Python Packaging Advisory Database, https://github.com/pypa/advisory-database, CC-BY-4.0"
+    },
+    {
+      "id": "osv-dev-api",
+      "used_for": "compareMirror/pypa-vs-osv",
+      "url": "https://api.osv.dev/v1/vulns/<PYSEC id>",
+      "fetched": "2026-10-12T21:23:37Z",
+      "records": 200,
+      "license": "PYSEC entries carry the CC-BY-4.0 license of the repository they come from (reported, not independently confirmed)",
+      "stored": "the same reduction as above: id, `modified` as written, digests of the other fields (data/advisories-vs-osv.json.gz)",
+      "attribution": "OSV.dev, PYSEC records from the Python Packaging Advisory Database, CC-BY-4.0"
+    },
+    {
+      "id": "whatwg-entities",
+      "used_for": "compareMirror/entities-real, entities-synthetic (canonical table)",
+      "url": "https://html.spec.whatwg.org/entities.json",
+      "last_modified": "Wed, 12 Nov 2025 00:20:03 GMT",
+      "etag": "6913d2b3-239e9",
+      "license": "WHATWG HTML Standard, CC BY 4.0 (reported)",
+      "stored": "entity name to code points: a table of facts (data/entities.json.gz)",
+      "attribution": "WHATWG HTML Standard, https://html.spec.whatwg.org/"
+    },
+    {
+      "id": "python-stdlib-html-entities",
+      "used_for": "entities mirror (python39-html5)",
+      "url": "Python 3.9.6 standard library, html.entities.html5",
+      "license": "PSF License",
+      "stored": "entity name to code points (data/entities.json.gz)"
+    },
+    {
+      "id": "npm-entities",
+      "used_for": "entities mirrors (entities 1.0.0, 1.1.2, 2.2.0)",
+      "urls": [
+        "https://registry.npmjs.org/entities/-/entities-1.0.0.tgz",
+        "https://registry.npmjs.org/entities/-/entities-1.1.2.tgz",
+        "https://registry.npmjs.org/entities/-/entities-2.2.0.tgz"
+      ],
+      "license": "BSD-like (1.0.0), BSD-2-Clause (1.1.2, 2.2.0)",
+      "stored": "entity name to code points (data/entities.json.gz)"
+    },
+    {
+      "id": "npm-html5-entities",
+      "used_for": "entities mirror (html5-entities 1.0.0)",
+      "url": "https://registry.npmjs.org/html5-entities/-/html5-entities-1.0.0.tgz",
+      "license": "MIT",
+      "stored": "entity name to code points (data/entities.json.gz)"
+    },
+    {
+      "id": "npm-character-entities",
+      "used_for": "entities mirror (character-entities 2.0.2)",
+      "url": "https://registry.npmjs.org/character-entities/-/character-entities-2.0.2.tgz",
+      "license": "MIT",
+      "stored": "entity name to code points (data/entities.json.gz)"
+    },
+    {
+      "id": "holdout",
+      "used_for": "holdout/compareMirror/http-status, spdx, gitea",
+      "note": "Sources, revisions, licenses and SHA-256 of every raw file are in holdout/raw-manifest.json. IANA registry (CC0-1.0 per IANA), Go (BSD-3-Clause), npm statuses (MIT), SPDX License List 3.29.0 (attribution given; license-list-XML is CC-BY-3.0), npm spdx-license-list and spdx-license-ids (CC0-1.0), Gitea (MIT), Node and Python standard libraries run locally.",
+      "stored": "reason phrases, license ids and names with two flags, and per UI string the printf verbs, tag names and URLs (holdout/data)"
+    }
+  ],
+  "fetched_not_vendored": [
+    {
+      "id": "mastodon-locales",
+      "used_for": "fetched/compareMirror/i18n-mastodon",
+      "url": "https://github.com/mastodon/mastodon",
+      "path": "app/javascript/mastodon/locales",
+      "commit": "cbe4329f1cd4c82991216c77f078a4e69ee43b47",
+      "license": "AGPL-3.0",
+      "stored": "nothing. 106 files, SHA-256 in fetch/manifest.json."
+    },
+    {
+      "id": "nextcloud-core-l10n",
+      "used_for": "fetched/compareMirror/nextcloud-l10n",
+      "url": "https://github.com/nextcloud/server",
+      "path": "core/l10n",
+      "commit": "09fe3ddad20cc3f1b09eea564bdc591166da4a15",
+      "license": "AGPL-3.0",
+      "stored": "nothing. 57 files, SHA-256 in fetch/manifest.json. The keys of these files are English UI strings, which is a second reason not to copy them."
+    }
+  ],
+  "synthetic": [
+    "stamps-injected: seeded edits of real advisory records (seed 20261012), labels recomputed by build/oracle/oracle_s2.py",
+    "entities-synthetic: seeded edits of the Python entity table (seed 20261012), labels by construction and by build/oracle/oracle_entities.py",
+    "stamp-edge-cases: 40 hand-chosen stamp spellings, labels by build/oracle/oracle_s2.py",
+    "numberTolerance grids: generated in lib/vendored.mjs, labels by integer arithmetic on whole cents or tenths"
+  ],
+  "handling": "Downloaded content is untrusted data. It was parsed only as JSON, CSV, INI, YAML (python safe loader, no timestamp resolution) or plain text, with python -I, and no downloaded script was ever run. Raw downloads live outside this repository."
+}

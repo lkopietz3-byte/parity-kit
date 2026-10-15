@@ -1,0 +1,657 @@
+{
+ "auditReviewStamps/pypa-history/backward": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "backward": {
+    "backward": 0,
+    "match": 0
+   },
+   "match": {
+    "backward": 0,
+    "match": 533837
+   }
+  },
+  "denominators": "record pairs (union of ids on both sides), summed over pairs with a change",
+  "facts": {
+   "pairsAudited": 75,
+   "recordPairComparisons": 533837
+  },
+  "what": "one real pair of daily or horizon snapshots of the pypa advisory database; `modified` is the review stamp, any other field change is evidence: backward"
+ },
+ "auditReviewStamps/pypa-history/bulkBump": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "bulkBump": {
+    "bulkBump": 170,
+    "match": 0
+   },
+   "match": {
+    "bulkBump": 0,
+    "match": 533667
+   }
+  },
+  "denominators": "record pairs (union of ids on both sides), summed over pairs with a change",
+  "facts": {
+   "pairsAudited": 75,
+   "recordPairComparisons": 533837
+  },
+  "what": "one real pair of daily or horizon snapshots of the pypa advisory database; `modified` is the review stamp, any other field change is evidence: bulkBump"
+ },
+ "auditReviewStamps/pypa-history/future": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "future": {
+    "future": 144,
+    "match": 0
+   },
+   "match": {
+    "future": 0,
+    "match": 533693
+   }
+  },
+  "denominators": "record pairs (union of ids on both sides), summed over pairs with a change",
+  "facts": {
+   "pairsAudited": 75,
+   "recordPairComparisons": 533837
+  },
+  "what": "one real pair of daily or horizon snapshots of the pypa advisory database; `modified` is the review stamp, any other field change is evidence: future"
+ },
+ "auditReviewStamps/pypa-history/stampOnly": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 533836,
+    "stampOnly": 0
+   },
+   "stampOnly": {
+    "match": 0,
+    "stampOnly": 1
+   }
+  },
+  "denominators": "record pairs (union of ids on both sides), summed over pairs with a change",
+  "facts": {
+   "pairsAudited": 75,
+   "recordPairComparisons": 533837
+  },
+  "what": "one real pair of daily or horizon snapshots of the pypa advisory database; `modified` is the review stamp, any other field change is evidence: stampOnly"
+ },
+ "auditReviewStamps/pypa-history/unreadable-stamp": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 533837,
+    "unreadable-stamp": 0
+   },
+   "unreadable-stamp": {
+    "match": 0,
+    "unreadable-stamp": 0
+   }
+  },
+  "denominators": "record pairs (union of ids on both sides), summed over pairs with a change",
+  "facts": {
+   "pairsAudited": 75,
+   "recordPairComparisons": 533837
+  },
+  "what": "one real pair of daily or horizon snapshots of the pypa advisory database; `modified` is the review stamp, any other field change is evidence: unknown"
+ },
+ "auditReviewStamps/pypa-injected/backward": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "backward": {
+    "backward": 100,
+    "match": 0
+   },
+   "match": {
+    "backward": 0,
+    "match": 592
+   }
+  },
+  "denominators": "edited records",
+  "what": "real records with a seeded stamp edit (later, backward, same instant in another notation, sub-millisecond, future, bulk of 10, 11, 25, odd or removed stamps, bare dates): backward"
+ },
+ "auditReviewStamps/pypa-injected/bulkBump": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "bulkBump": {
+    "bulkBump": 51,
+    "match": 0
+   },
+   "match": {
+    "bulkBump": 0,
+    "match": 641
+   }
+  },
+  "denominators": "edited records",
+  "what": "real records with a seeded stamp edit (later, backward, same instant in another notation, sub-millisecond, future, bulk of 10, 11, 25, odd or removed stamps, bare dates): bulkBump"
+ },
+ "auditReviewStamps/pypa-injected/future": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "future": {
+    "future": 60,
+    "match": 0
+   },
+   "match": {
+    "future": 0,
+    "match": 632
+   }
+  },
+  "denominators": "edited records",
+  "what": "real records with a seeded stamp edit (later, backward, same instant in another notation, sub-millisecond, future, bulk of 10, 11, 25, odd or removed stamps, bare dates): future"
+ },
+ "auditReviewStamps/pypa-injected/stampOnly": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 366,
+    "stampOnly": 0
+   },
+   "stampOnly": {
+    "match": 0,
+    "stampOnly": 326
+   }
+  },
+  "denominators": "edited records",
+  "facts": {
+   "exactFlagSetByVariant": {
+    "V10_bare_dates": "40/40",
+    "V1_stamp_only_later": "150/150",
+    "V2_stamp_plus_whitespace_details": "100/100",
+    "V3_backward": "100/100",
+    "V4_same_instant_other_notation": "100/100",
+    "V5_submillisecond_move": "27/27",
+    "V6_plus_one_ms": "30/30",
+    "V7_future": "60/60",
+    "V8_bulk_10_same_day": "10/10",
+    "V8_bulk_11_same_day": "11/11",
+    "V8_bulk_15_evidenced": "15/15",
+    "V8_bulk_25_same_day": "25/25",
+    "V9_odd_stamps": "14/14",
+    "V9b_stamp_removed": "10/10"
+   }
+  },
+  "what": "real records with a seeded stamp edit (later, backward, same instant in another notation, sub-millisecond, future, bulk of 10, 11, 25, odd or removed stamps, bare dates): stampOnly"
+ },
+ "auditReviewStamps/pypa-injected/unreadable-stamp": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 668,
+    "unreadable-stamp": 0
+   },
+   "unreadable-stamp": {
+    "match": 0,
+    "unreadable-stamp": 24
+   }
+  },
+  "denominators": "edited records",
+  "what": "real records with a seeded stamp edit (later, backward, same instant in another notation, sub-millisecond, future, bulk of 10, 11, 25, odd or removed stamps, bare dates): unknown"
+ },
+ "auditReviewStamps/pypa-option-variants/bulkBump": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "bulkBump": {
+    "bulkBump": 330,
+    "match": 0
+   },
+   "match": {
+    "bulkBump": 0,
+    "match": 138990
+   }
+  },
+  "denominators": "record pairs (union of ids), summed over six pairs and three option sets",
+  "what": "the six horizon pairs again with valueFields or ignoreFields changing what counts as evidence: bulkBump"
+ },
+ "auditReviewStamps/pypa-option-variants/stampOnly": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 139228,
+    "stampOnly": 0
+   },
+   "stampOnly": {
+    "match": 0,
+    "stampOnly": 92
+   }
+  },
+  "denominators": "record pairs (union of ids), summed over six pairs and three option sets",
+  "what": "the six horizon pairs again with valueFields or ignoreFields changing what counts as evidence: stampOnly"
+ },
+ "auditReviewStamps/stamp-edge-cases/backward": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "backward": {
+    "backward": 5,
+    "match": 0
+   },
+   "match": {
+    "backward": 0,
+    "match": 35
+   }
+  },
+  "denominators": "stamp strings",
+  "what": "one record whose stamp moves from 2026-06-01 to a boundary notation (offsets, fractions, leap days, 24:00, whitespace, full-width digits): backward"
+ },
+ "auditReviewStamps/stamp-edge-cases/future": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "future": {
+    "future": 5,
+    "match": 0
+   },
+   "match": {
+    "future": 0,
+    "match": 35
+   }
+  },
+  "denominators": "stamp strings",
+  "what": "one record whose stamp moves from 2026-06-01 to a boundary notation (offsets, fractions, leap days, 24:00, whitespace, full-width digits): future"
+ },
+ "auditReviewStamps/stamp-edge-cases/stampOnly": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 23,
+    "stampOnly": 0
+   },
+   "stampOnly": {
+    "match": 0,
+    "stampOnly": 17
+   }
+  },
+  "denominators": "stamp strings",
+  "what": "one record whose stamp moves from 2026-06-01 to a boundary notation (offsets, fractions, leap days, 24:00, whitespace, full-width digits): stampOnly"
+ },
+ "auditReviewStamps/stamp-edge-cases/unreadable-stamp": {
+  "check": "auditReviewStamps",
+  "counts": {
+   "match": {
+    "match": 26,
+    "unreadable-stamp": 0
+   },
+   "unreadable-stamp": {
+    "match": 0,
+    "unreadable-stamp": 14
+   }
+  },
+  "denominators": "stamp strings",
+  "what": "one record whose stamp moves from 2026-06-01 to a boundary notation (offsets, fractions, leap days, 24:00, whitespace, full-width digits): unknown"
+ },
+ "compareMirror/entities-real/default": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 12962
+   },
+   "missing": {
+    "missing": 424
+   }
+  },
+  "denominators": "entity names in the union of both tables, summed over the six copies",
+  "facts": {
+   "itemsInLookalikeGroups": 4746,
+   "resultStatus": {
+    "flagged": 4,
+    "unknown": 2
+   }
+  },
+  "what": "WHATWG entity table against six published copies (stdlib and npm packages), per entity name"
+ },
+ "compareMirror/entities-real/foldCase-false": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 12962
+   },
+   "missing": {
+    "missing": 424
+   }
+  },
+  "denominators": "entity names in the union of both tables, summed over the six copies",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "resultStatus": {
+    "flagged": 4,
+    "ok": 2
+   }
+  },
+  "what": "WHATWG entity table against six published copies (stdlib and npm packages), per entity name"
+ },
+ "compareMirror/entities-synthetic/default": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 175
+   },
+   "extra": {
+    "extra": 80
+   },
+   "match": {
+    "match": 1976
+   },
+   "missing": {
+    "missing": 80
+   }
+  },
+  "denominators": "entity names in the union of both tables",
+  "facts": {
+   "itemsInLookalikeGroups": 749,
+   "resultStatus": {
+    "flagged": 1
+   }
+  },
+  "what": "a real copy with seeded edits (value swaps, zero-width and trailing-space suffixes, NFD forms, deletions, additions, Cyrillic homoglyph renames); labels by construction"
+ },
+ "compareMirror/entities-synthetic/foldCase-false": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 175
+   },
+   "extra": {
+    "extra": 80
+   },
+   "match": {
+    "match": 1976
+   },
+   "missing": {
+    "missing": 80
+   }
+  },
+  "denominators": "entity names in the union of both tables",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "resultStatus": {
+    "flagged": 1
+   }
+  },
+  "what": "a real copy with seeded edits (value swaps, zero-width and trailing-space suffixes, NFD forms, deletions, additions, Cyrillic homoglyph renames); labels by construction"
+ },
+ "compareMirror/i18n-excalidraw": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 1236
+   },
+   "match": {
+    "match": 33148
+   },
+   "missing": {
+    "missing": 1400
+   }
+  },
+  "denominators": "keys in the union of both files, summed over locale files",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "locales": 56,
+   "resultStatus": {
+    "flagged": 56
+   }
+  },
+  "what": "excalidraw: every key of every locale file against the source-language file, fields ph, tags, urls"
+ },
+ "compareMirror/i18n-jitsi": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 128
+   },
+   "match": {
+    "match": 70230
+   },
+   "missing": {
+    "missing": 24396
+   }
+  },
+  "denominators": "keys in the union of both files, summed over locale files",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "locales": 59,
+   "resultStatus": {
+    "flagged": 59
+   }
+  },
+  "what": "jitsi: every key of every locale file against the source-language file, fields ph, tags, urls"
+ },
+ "compareMirror/numberTolerance/cents-tol-0.01": {
+  "check": "compareMirror",
+  "counts": {
+   "different": {
+    "different": 3333
+   },
+   "match": {
+    "match": 6666
+   }
+  },
+  "denominators": "9999 price pairs",
+  "what": "prices on a cent grid; the mirror is 0, 1 or 2 units above the canonical price; numberTolerance 0.01"
+ },
+ "compareMirror/numberTolerance/cents-tol-0.01/at-the-boundary": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 3333
+   }
+  },
+  "denominators": "price pairs at the boundary",
+  "what": "only the pairs whose difference is exactly the tolerance (1 unit)"
+ },
+ "compareMirror/numberTolerance/cents-tol-0.02": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 9999
+   }
+  },
+  "denominators": "9999 price pairs",
+  "what": "prices on a cent grid; the mirror is 0, 1 or 2 units above the canonical price; numberTolerance 0.02"
+ },
+ "compareMirror/numberTolerance/cents-tol-0.02/at-the-boundary": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 3333
+   }
+  },
+  "denominators": "price pairs at the boundary",
+  "what": "only the pairs whose difference is exactly the tolerance (2 units)"
+ },
+ "compareMirror/numberTolerance/tenths-tol-0.1": {
+  "check": "compareMirror",
+  "counts": {
+   "different": {
+    "different": 3333
+   },
+   "match": {
+    "match": 6666
+   }
+  },
+  "denominators": "9999 price pairs",
+  "what": "prices on a tenth grid; the mirror is 0, 1 or 2 units above the canonical price; numberTolerance 0.1"
+ },
+ "compareMirror/numberTolerance/tenths-tol-0.1/at-the-boundary": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 3333
+   }
+  },
+  "denominators": "price pairs at the boundary",
+  "what": "only the pairs whose difference is exactly the tolerance (1 unit)"
+ },
+ "compareMirror/pypa-vs-osv/fields": {
+  "check": "compareMirror",
+  "counts": {
+   "different": {
+    "different": 468
+   },
+   "extra-in-mirror": {
+    "extra-in-mirror": 200
+   },
+   "match": {
+    "match": 951
+   },
+   "missing-in-mirror": {
+    "missing-in-mirror": 7
+   }
+  },
+  "denominators": "fields in the union of both copies of an advisory, summed over 200 advisories",
+  "what": "one advisory in the pypa database against the same advisory served by OSV.dev, per field (fields other than id and modified are digests of the values)"
+ },
+ "compareMirror/pypa-vs-osv/stampHidesDrift": {
+  "check": "compareMirror",
+  "counts": {
+   "match": {
+    "match": 185
+   },
+   "stampHidesDrift": {
+    "stampHidesDrift": 15
+   }
+  },
+  "denominators": "200 advisories",
+  "what": "advisories whose `modified` stamp is the same instant in both copies while another field differs"
+ },
+ "fetched/compareMirror/i18n-mastodon": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 143
+   },
+   "match": {
+    "match": 95718
+   },
+   "missing": {
+    "missing": 71194
+   }
+  },
+  "denominators": "keys in the union of both files, summed over locale files",
+  "facts": {
+   "locales": 105,
+   "resultStatus": {
+    "flagged": 100,
+    "ok": 5
+   }
+  },
+  "what": "mastodon: every key of every locale file against en.json, ICU placeholder names, tag names and URLs"
+ },
+ "fetched/compareMirror/nextcloud-l10n": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 10
+   },
+   "extra": {
+    "extra": 127
+   },
+   "match": {
+    "match": 35832
+   },
+   "missing": {
+    "missing": 4963
+   }
+  },
+  "denominators": "keys in the union of both files, summed over 66 locale pairs",
+  "facts": {
+   "itemsInLookalikeGroups": 1281,
+   "localePairs": 66,
+   "resultStatus": {
+    "flagged": 52,
+    "unknown": 14
+   }
+  },
+  "what": "nextcloud core translations: en_GB against every other locale, and ten pairs of regional variants; keys are the English strings, field is the set of %s, %1$s and {name} placeholders"
+ },
+ "findHandTypedConstants/advisory-texts": {
+  "check": "findHandTypedConstants",
+  "counts": {
+   "hit": {
+    "hit": 306
+   },
+   "match": {
+    "match": 479
+   }
+  },
+  "denominators": "digit runs whose value equals a registered number (typed copies, plus runs the rules exclude), plus kit hits that are neither",
+  "facts": {
+   "flaggedNonCopyIds": {},
+   "kitHits": 306,
+   "missedIds": {}
+  },
+  "what": "400 advisory descriptions and 9 registered numbers; every digit run equal to a registered number is either a hand-typed copy or not, by the README rules"
+ },
+ "holdout/compareMirror/gitea": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 84
+   },
+   "extra": {
+    "extra": 24
+   },
+   "match": {
+    "match": 36223
+   },
+   "missing": {
+    "missing": 7361
+   }
+  },
+  "denominators": "ids in the union of canonical and mirror, summed over mirrors",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "mirrors": 12,
+   "resultStatus": {
+    "flagged": 12
+   }
+  },
+  "what": "fresh holdout, labeled before the run: Gitea en-US strings against twelve translations (printf verbs, tags, URLs)"
+ },
+ "holdout/compareMirror/http-status": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 20
+   },
+   "extra": {
+    "extra": 9
+   },
+   "match": {
+    "match": 285
+   },
+   "missing": {
+    "missing": 5
+   }
+  },
+  "denominators": "ids in the union of canonical and mirror, summed over mirrors",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "mirrors": 5,
+   "resultStatus": {
+    "flagged": 5
+   }
+  },
+  "what": "fresh holdout, labeled before the run: IANA status registry against five published copies of the reason phrases"
+ },
+ "holdout/compareMirror/spdx": {
+  "check": "compareMirror",
+  "counts": {
+   "drift": {
+    "drift": 4
+   },
+   "match": {
+    "match": 1457
+   },
+   "missing": {
+    "missing": 19
+   }
+  },
+  "denominators": "ids in the union of canonical and mirror, summed over mirrors",
+  "facts": {
+   "itemsInLookalikeGroups": 0,
+   "mirrors": 2,
+   "resultStatus": {
+    "flagged": 2
+   }
+  },
+  "what": "fresh holdout, labeled before the run: SPDX License List 3.29.0 against two npm packages"
+ }
+}

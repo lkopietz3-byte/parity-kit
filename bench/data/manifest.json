@@ -1,0 +1,53 @@
+{
+ "note": "SHA-256 of every vendored bench data file, relative to bench/",
+ "files": {
+  "data/advisories-vs-osv.json.gz": {
+   "sha256": "b1fe4c1bc80c41041c9c406abed9b8b3e3a21f807d80a9c5182d267fbbedd6db",
+   "bytes": 30095
+  },
+  "data/constants.json.gz": {
+   "sha256": "0a81bad688d2f483307c1d5799972a3371b459c3a45112094325c2fb69c0d1fc",
+   "bytes": 181104
+  },
+  "data/entities.json.gz": {
+   "sha256": "87999cc768c8632dce7583a2c7d6198c4d6203d13bc1acac31ade5eb05eb2dea",
+   "bytes": 96932
+  },
+  "data/i18n-excalidraw.json.gz": {
+   "sha256": "4ebdd4abed56b71f0598f7cfe7e2f8af148fe229db2a6be078eb7a828e793c37",
+   "bytes": 20497
+  },
+  "data/i18n-jitsi.json.gz": {
+   "sha256": "bfd9688366341db6e2af9b29a0f1c0b0744278c0e8a621629abbfeb270fe79e6",
+   "bytes": 578448
+  },
+  "data/stamps-edge.json": {
+   "sha256": "9fe7407328d9c7f2fc12dd49e5ee1e73798dfa2228ff0b693640d2831ff6803c",
+   "bytes": 2216
+  },
+  "data/stamps-history.json.gz": {
+   "sha256": "ee58993bce98260c06f58eb336904a406dc1001d5f83bae731b3df3c5b1f2ecb",
+   "bytes": 575392
+  },
+  "data/stamps-injected.json.gz": {
+   "sha256": "841649980f4f59ae491e0ce79c25bbe1b2ed2b0835f46c5387d9e2841b5d9b29",
+   "bytes": 51905
+  },
+  "holdout/data/gitea.json.gz": {
+   "sha256": "9f72248b59debcf7939c6f3b5f2d66de652dfc177ba9c88f46960658847ca99f",
+   "bytes": 258402
+  },
+  "holdout/data/http-status.json.gz": {
+   "sha256": "378391ca961e9585c038eee7a0baaf9b73162d1dd810db5c4b9e9a01650eb562",
+   "bytes": 1175
+  },
+  "holdout/data/labels.json": {
+   "sha256": "6baea316fe0c8b81c473ea0f1a9594c945d20ae0f4a92fdf16ea10b287cfa7ec",
+   "bytes": 252327
+  },
+  "holdout/data/spdx.json.gz": {
+   "sha256": "d65304d036ce744c7faa8eda36e0fca2c82951ec96b19152ba40b7f77a3842b3",
+   "bytes": 23428
+  }
+ }
+}

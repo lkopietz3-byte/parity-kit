@@ -64,6 +64,7 @@ const forbidden = [
   /\.test\.[cm]?[jt]s$/, /(^|\/)tests?\//, /(^|\/)tsconfig[^/]*\.json$/,
   /(^|\/)eslint\.config\./, /(^|\/)vitest\.config\./, /(^|\/)scripts\//,
   /(^|\/)package-lock\.json$/, /\.tgz$/,
+  /(^|\/)bench\//, /(^|\/)docs\//,
 ];
 const leaked = packed.filter((p) => forbidden.some((re) => re.test(p)));
 assert.deepEqual(leaked, [], `Tarball contains files that must not ship: ${leaked.join(', ')}`);
