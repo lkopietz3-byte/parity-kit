@@ -32,7 +32,8 @@ export interface HandTypedMatch {
 // ---------------------------------------------------------------------------
 
 const isDigitCode = (c: number): boolean => c >= 48 && c <= 57;
-const WORD = /^[\p{L}\p{N}_]$/u;
+/** Letters, combining marks, digits and underscore: a mark glues like the letter it sits on, so NFC and NFD spellings agree. */
+const WORD = /^[\p{L}\p{M}\p{N}_]$/u;
 
 /** The code point that ends just before `index`, as a string ('' at the start). */
 function charBefore(text: string, index: number): string {
@@ -108,6 +109,44 @@ function minusIsSign(text: string, signIndex: number): boolean {
   return !(isWord(before) || before === ')' || before === ']' || before === '}' || before === '.' || before === "'" || before === '"');
 }
 
+/** Characters that may follow a `%` in a printf conversion before the precision: the flags. */
+const isPrintfFlag = (c: number): boolean => c === 43 || c === 45 || c === 32 || c === 35;
+
+/**
+ * Is a ".5" that starts at `dot` (and ends at `end`) not a number typed on its
+ * own? Four shapes read the same but are not a literal: a printf precision
+ * (`%.1f`, `%+.2f`, `% .3f`), a format-spec precision after a colon or comma
+ * and before the closing brace (`{:.2f}`, `{score:.1f}`, `{:,.2f}`, `{:.1}`), a
+ * regular-expression escape (`1\.1`), and a dot after a closing bracket
+ * (`${version}.1`, `f(x).5`). Looks back over at most five flag characters, so it
+ * costs a constant per number.
+ */
+function notALeadingDotNumber(text: string, dot: number, before: string, end: number): boolean {
+  if (before === '%' || before === ')' || before === ']' || before === '}' || before === '\\') return true;
+  if (before === ':' || before === ',') {
+    let close = end;
+    const c = text.charCodeAt(close);
+    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 37) close += 1;
+    return text.charCodeAt(close) === 125;
+  }
+  if (isPrintfFlag(dot === 0 ? 0 : text.charCodeAt(dot - 1))) {
+    let k = dot - 1;
+    for (let steps = 0; steps < 5 && k >= 0 && isPrintfFlag(text.charCodeAt(k)); steps += 1) k -= 1;
+    return k >= 0 && text.charCodeAt(k) === 37;
+  }
+  return false;
+}
+
+/** Does this digit run have a nonzero digit in its mantissa? (`1e-999` does, and still reads as 0.) */
+function mantissaIsNonzero(text: string, start: number, end: number): boolean {
+  for (let k = start; k < end; k += 1) {
+    const c = text.charCodeAt(k);
+    if (c === 101 || c === 69) return false;
+    if (c >= 49 && c <= 57) return true;
+  }
+  return false;
+}
+
 /**
  * Scan for numbers in one left-to-right pass. A number is digits with
  * optional "," thousands groups of exactly three digits, an optional "." and
@@ -139,9 +178,13 @@ function* lexNumbers(text: string): Generator<LexedRun> {
       // A zero-padded run (08, 007) is a code, a date part or an id, not a typed number.
       if (j - start > 1 && text.charCodeAt(start) === 48) valid = false;
       // Groups of exactly three digits after "," or "_" (1,250 and 1_250); the separator must not change within a number.
+      // A comma group also needs a leading group of one to three digits that does not start with 0:
+      // "2024,100" and "[1000,250]" hold two numbers each, and "0,500" holds 0 and 500.
       const separator = text.charCodeAt(j);
+      const groupable = separator === 95 || (j - start <= 3 && text.charCodeAt(start) !== 48);
       while (
         j + 3 < n &&
+        groupable &&
         (separator === 44 || separator === 95) &&
         text.charCodeAt(j) === separator &&
         isDigitCode(text.charCodeAt(j + 1)) &&
@@ -172,7 +215,8 @@ function* lexNumbers(text: string): Generator<LexedRun> {
     }
     // Boundaries.
     const before = charBefore(text, start);
-    const leftGlued = before !== '' && gluesTo(before, '0');
+    const leftGlued =
+      (before !== '' && gluesTo(before, '0')) || (startsDot && notALeadingDotNumber(text, start, before, j));
     const after = j < n ? charAt(text, j) : '';
     // "_" glues the number to an identifier; a non-ASCII digit makes it part of a longer number.
     const rightGlued = after === '_' || (after !== '' && DECIMAL_DIGIT.test(after));
@@ -193,6 +237,8 @@ function* numberTokens(text: string): Generator<NumberToken> {
       tokenStart = run.start - 1;
     }
     const value = Number(text.slice(run.start, run.end).replace(/[,_]/g, ''));
+    // A number that underflowed to zero (1e-999) is not the number zero.
+    if (value === 0 && mantissaIsNonzero(text, run.start, run.end)) continue;
     if (Number.isFinite(value)) yield { start: tokenStart, end: run.end, value: negative ? -value : value };
   }
 }

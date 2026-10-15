@@ -2958,3 +2958,148 @@ describe('gate-hostile:F1: now must fall in years 0001 to 9999, the years a stam
     expect(run(1.78e9).future.map((f) => f.id)).toEqual(['a'])
   })
 })
+
+describe('gate-false-pass:GFP-04: printf and format specs are not leading-dot numbers', () => {
+  const found = (value: number, text: string): string[] =>
+    findHandTypedConstants(text, [{ id: 'c', value }]).map((h) => h.text)
+
+  it.each([
+    [0.1, 'printf("%.1f", x)'],
+    [0.5, 'print("{:.5f}".format(x))'],
+    [0.25, 'fmt = "%.25f"'],
+    [0.1, 'f"{score:.1f}"'],
+    [0.1, 'format!("{:.1}", x)'],
+    [0.2, 'format!("{:.2f}", x)'],
+    [0.2, 'f"{value:.2f}"'],
+    [0.5, 'Printf("%+.5f", x)'],
+    [0.5, 'Printf("%-.5f", x)'],
+    [0.5, 'Printf("% .5f", x)'],
+    [0.5, 'Printf("%#.5g", x)'],
+    [0.1, 'const re = /1\\.1/'],
+    [0.1, 'path = `${version}.1`'],
+    [0.5, 'items[0].5'],
+    [0.5, 'call(x).5'],
+  ])('%s is not found in %j', (value, text) => {
+    expect(found(value, text)).toEqual([])
+  })
+
+  it('gate-false-pass:GFP-04: no digit of a skipped format spec is read as a whole number either', () => {
+    expect(found(1, 'printf("%.1f", x)')).toEqual([])
+    expect(found(2, 'f"{value:.2f}"')).toEqual([])
+    expect(found(5, 'Printf("%+.5f", x)')).toEqual([])
+  })
+
+  it.each([
+    [0.5, 'x = .5', ['.5']],
+    [0.5, 'rate .5 here', ['.5']],
+    [0.5, '(.5)', ['.5']],
+    [0.5, '[.25, .5]', ['.5']],
+    [0.5, 'a=.5;', ['.5']],
+    [0.5, 'a,.5', ['.5']],
+    [0.5, 'opacity:.5;', ['.5']],
+    [0.5, 'margin:.5em', ['.5']],
+    [0.5, '{"a":.5,"b":1}', ['.5']],
+    [0.5, "'.5'", ['.5']],
+    [0.5, 'x*.5', ['.5']],
+    [0.5, '50 + .5', ['.5']],
+    [0.5, '% = .5', ['.5']],
+  ] as Array<[number, string, string[]]>)('gate-false-pass:GFP-04: a real typed %s is still found in %j', (value, text, expected) => {
+    expect(found(value, text)).toEqual(expected)
+  })
+
+  it('gate-false-pass:GFP-04: looking back for printf flags stays linear in the text', () => {
+    const cpu = (text: string): number => {
+      const start = process.cpuUsage()
+      found(0.5, text)
+      const used = process.cpuUsage(start)
+      return (used.user + used.system) / 1000
+    }
+    expect(found(0.5, '+ '.repeat(50_000) + '.5')).toEqual(['.5'])
+    expect(found(0.5, '+ .5 '.repeat(5))).toHaveLength(5)
+    const small = Math.max(cpu('+ .5 '.repeat(20_000)), 5)
+    const large = cpu('+ .5 '.repeat(80_000))
+    expect(large).toBeLessThan(small * 12)
+  })
+})
+
+describe('gate-hostile:F2: a thousands group needs a leading group of one to three digits', () => {
+  const found = (value: number, text: string): string[] =>
+    findHandTypedConstants(text, [{ id: 'c', value }]).map((h) => h.text)
+
+  it.each([
+    [100, 'label,2024,100,x', ['100']],
+    [2024, 'label,2024,100,x', ['2024']],
+    [250, '[1000,250]', ['250']],
+    [1000, '[1000,250]', ['1000']],
+    [678, '12345,678', ['678']],
+    [12345, '12345,678', ['12345']],
+    [250, 'id=1000,250,x', ['250']],
+  ] as Array<[number, string, string[]]>)('gate-hostile:F2: %s is found in %j', (value, text, expected) => {
+    expect(found(value, text)).toEqual(expected)
+  })
+
+  it.each([
+    [1000250, '[1000,250]'],
+    [12345678, '12345,678'],
+    [2024100, 'label,2024,100,x'],
+  ])('gate-hostile:F2: the glued number %s is not found in %j', (value, text) => {
+    expect(found(value, text)).toEqual([])
+  })
+
+  it('gate-hostile:F2: 0,500 is a 0 and a 500 (a decimal comma is not read as a fraction), never 0500', () => {
+    expect(found(500, 'ratio 0,500')).toEqual(['500'])
+    expect(found(0, 'ratio 0,500')).toEqual(['0'])
+  })
+
+  it.each([
+    [1250, '1,250', ['1,250']],
+    [12345, '12,345', ['12,345']],
+    [1250000, 'total 1,250,000.', ['1,250,000']],
+    [999, 'x 999 y', ['999']],
+    [100200300, '[100,200,300]', ['100,200,300']],
+    [34567, '12,34,567', ['34,567']],
+    [12, '12,34,567', ['12']],
+    [1250, '1,250,5', ['1,250']],
+    [1000000, 'const MAX = 1_000_000;', ['1_000_000']],
+  ] as Array<[number, string, string[]]>)('gate-hostile:F2: %s is read as before in %j', (value, text, expected) => {
+    expect(found(value, text)).toEqual(expected)
+  })
+})
+
+describe('gate-false-pass:GFP-12 / gate-hostile:F8: a combining mark glues like the letter it sits on', () => {
+  const found = (text: string): string[] => findHandTypedConstants(text, [{ id: 'c', value: 1.25 }]).map((h) => h.text)
+
+  it('gate-false-pass:GFP-12: the NFC and NFD spellings of the same word get the same verdict', () => {
+    const nfc = 'café1.25'
+    const nfd = 'café1.25'
+    expect(nfc.normalize('NFD')).toBe(nfd)
+    expect(found(nfc)).toEqual([])
+    expect(found(nfd)).toEqual([])
+  })
+
+  it('gate-false-pass:GFP-12: Hindi and Arabic words that end in a mark glue like their unmarked forms', () => {
+    expect(found('है' + '1.25')).toEqual([]) // है
+    expect(found('हम' + '1.25')).toEqual([]) // हम
+    expect(found('اللّ' + '1.25')).toEqual([]) // an Arabic word ending in shadda
+    expect(found('الل' + '1.25')).toEqual([])
+  })
+
+  it('gate-false-pass:GFP-12: a Thai tone mark still does not glue (an unspaced script)', () => {
+    expect(found('ที่' + '1.25')).toEqual(['1.25']) // ที่1.25
+    expect(found('อัตรา' + '1.25')).toEqual(['1.25'])
+  })
+
+  it('gate-false-pass:GFP-12: a mark also keeps a minus sign from reading as a sign, the way a letter does', () => {
+    const hits = findHandTypedConstants('café-1.25', [{ id: 'c', value: 1.25 }])
+    const letter = findHandTypedConstants('café-1.25', [{ id: 'c', value: 1.25 }])
+    expect(hits.map((h) => h.text)).toEqual(letter.map((h) => h.text))
+  })
+
+  it('gate-hostile:F8: a number that underflows to zero is not a zero', () => {
+    const zero = (text: string): string[] => findHandTypedConstants(text, [{ id: 'z', value: 0 }]).map((h) => h.text)
+    expect(zero('x = 1e-999')).toEqual([])
+    expect(zero('x = 0.000')).toEqual(['0.000'])
+    expect(zero('x = 0e5')).toEqual(['0e5'])
+    expect(zero('x = 0')).toEqual(['0'])
+  })
+})
