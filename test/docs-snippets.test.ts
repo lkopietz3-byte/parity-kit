@@ -3,10 +3,16 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import ts from 'typescript'
 import { describe, expect, it, vi } from 'vitest'
-import * as api from '../src/index.js'
-import type { MirrorResult, StampAudit } from '../src/index.js'
+import type * as Src from '../src/index.js'
+import type { HandTypedMatch, MirrorResult, StampAudit } from '../src/index.js'
+import { findCases, runCode } from '../bench/lib/doc-blocks.mjs'
 
 vi.setConfig({ testTimeout: 120_000 })
+
+// The examples run against the source. `PARITY_KIT_TARGET=dist npx vitest run test/docs-snippets.test.ts`
+// runs them against the built package in dist/ instead.
+const target = process.env['PARITY_KIT_TARGET'] === 'dist' ? '../dist/index.js' : '../src/index.js'
+const api = (await import(target)) as typeof Src
 
 // Every code block in README.md is run here, so a copied example cannot rot.
 // Each ```ts block is type-checked in a strict project against the real
@@ -93,7 +99,7 @@ const SNIPPETS: Snippet[] = [
     prelude: "import { findHandTypedConstants } from 'parity-kit';\nconst sourceText = 'export const chaseUrCpp = 1.25;\\n';\n",
     suffix: 'export { hits };',
     check: ({ first }) => {
-      const hits = first.out['hits'] as api.HandTypedMatch[]
+      const hits = first.out['hits'] as HandTypedMatch[]
       expect(hits[0]).toMatchObject({ id: 'chase-ur.baselineCpp', text: '1.25', line: 1, column: 27, kind: 'number' })
     },
   },
@@ -265,9 +271,12 @@ describe('README code blocks', () => {
     })
     // The shell blocks are install and project commands. They are listed so a new one has to be looked at.
     const shell = blocks.filter((b) => b.lang === 'sh').map((b) => b.code.trim().split('\n')[0])
-    expect(shell).toEqual(['cd parity-kit', 'npm ci'])
+    expect(shell).toEqual(['npm i parity-kit', 'cd parity-kit', 'npm ci'])
     expect(blocks.filter((b) => b.lang === 'json')).toHaveLength(1)
-    expect(blocks.filter((b) => !['ts', 'sh', 'json'].includes(b.lang))).toEqual([])
+    // The quick start is one js block and the text block with what it prints; the test below runs it.
+    expect(blocks.filter((b) => !['ts', 'sh', 'json', 'js', 'text'].includes(b.lang))).toEqual([])
+    expect(blocks.filter((b) => b.lang === 'js')).toHaveLength(1)
+    expect(blocks.filter((b) => b.lang === 'text')).toHaveLength(1)
   })
 
   it('compiles every ts block in a strict project against the real source', () => {
@@ -314,5 +323,15 @@ describe('README code blocks', () => {
       const source = assemble(snippet, block.code)
       snippet.check({ first: execute(source, {}), run: (files = {}) => execute(source, files) })
     })
+  })
+})
+
+describe('README quick start', () => {
+  it('prints exactly what the text block under it says', async () => {
+    const cases = findCases(readme)
+    expect(cases).toHaveLength(1)
+    const [quick] = cases
+    const printed = await runCode(quick?.code ?? '', { 'parity-kit': api })
+    expect(printed.trimEnd()).toBe((quick?.expected ?? '').trimEnd())
   })
 })

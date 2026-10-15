@@ -1,13 +1,39 @@
 # Parity Kit
 
-A small, zero-dependency TypeScript library for two questions about data you publish more than once:
+Check that every copy of a fact still matches its source of truth, and that a review date was earned by an actual recheck.
 
-1. **Does every copy of a fact still match its source of truth?** (`compareMirror`, `findHandTypedConstants`)
-2. **Was a review date earned by an actual recheck?** (`auditReviewStamps`)
+Zero dependencies, TypeScript, Node 20 or newer. It reads no files, makes no network calls and reads no clock unless you give it a time. MIT license.
 
-It is for developers who keep a source-of-truth data file and publish copies of it (a website, an extension, docs) and want a CI check that fails when the copies drift or a review date moves without a recheck. You hand it data. It hands back a plain report of what differs. It reads no files, makes no network calls and reads no clock unless you give it a time. It does not decide which copy is right, prove that a person rechecked anything, or check that a value is true (see "What it does not do"). Part of the honesty kits, a family of small checks for the claims a product makes.
+```sh
+npm i parity-kit
+```
 
-This package is private and unlicensed (`"private": true`, `"license": "UNLICENSED"`). It is not published anywhere.
+## Quick start
+
+`source` is the data you trust. `copy` is a copy of it that you publish somewhere else.
+
+```js
+import { compareMirror } from 'parity-kit';
+
+const source = [{ id: 'a', price: 10 }, { id: 'b', price: 20 }];
+const copy = [{ id: 'a', price: 10 }, { id: 'b', price: 25 }];
+
+const result = compareMirror(source, copy);
+console.log(result.ok, result.status);
+console.log(JSON.stringify(result.changed));
+```
+
+```text
+false flagged
+[{"id":"b","field":"price","change":"different","canonical":20,"mirror":25}]
+```
+
+Three functions, one plain report each:
+
+1. **Does every copy of a fact still match its source of truth?** `compareMirror` compares a canonical record set to a mirror. `findHandTypedConstants` finds hand-typed copies of registered values in text.
+2. **Was a review date earned by an actual recheck?** `auditReviewStamps` compares two snapshots and reports dates that moved with nothing in the data to show a recheck.
+
+It is for developers who keep a source-of-truth data file and publish copies of it (a website, an extension, docs) and want a CI check that fails when the copies drift or a review date moves without a recheck. You hand it data and it hands back a report of what differs. It does not decide which copy is right, prove that a person rechecked anything, or check that a value is true: it checks evidence, and it does not certify truth or compliance (see "What it does not do" and [METHOD.md](METHOD.md)). Part of the honesty kits, a family of small checks for the claims a product makes.
 
 ## Why
 
@@ -18,17 +44,45 @@ Facts get copied. A `programs.json` feeds a website, a browser extension ships i
 
 freshness-kit (a sibling kit) scores how old a review date is. This kit asks a different question: do the copies agree, and did the date move for a reason the data can show.
 
-## Evidence
+## Accuracy on real data
 
-The claims here are checked, and the checks can be re-run by anyone with a checkout.
+The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be. The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. You can re-run them with `npm run bench` in a checkout of the repository.
 
-- `bench/` is a labeled benchmark: real translation files, an advisory database and its OSV copy, entity tables and review-stamp histories, a fresh holdout that was labeled before the kit was run on it, and seeded edits. `npm run bench` prints false-pass and false-flag counts per class with denominators and fails if any count moves. Read `bench/README.md` for what it does and does not show, and `bench/RESULTS.md` for the numbers.
-- `docs/differential.md` records the cross-check against two generic diff libraries (`deep-diff` and `microdiff`, dev dependencies only) and every place the three disagree.
-- `docs/what-a-diff-cannot-answer.md` runs twelve cases through those libraries and the kit side by side, including the two where a diff is as good.
+| Corpus | An item is | Should flag | Missed (false pass) | Should pass | Flagged anyway (false flag) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Locale files of two apps (115 files) | a translation key, compared on placeholders, tags and URLs | 27,160 | 0 | 103,378 | 0 |
+| Locale files of two more apps, fetched (171 file pairs) | the same | 76,437 | 0 | 131,550 | 0 |
+| WHATWG entity table against six published copies | an entity name | 424 | 0 | 12,962 | 0 |
+| 200 advisories against their OSV.dev copies | a field | 675 | 0 | 951 | 0 |
+| Fresh holdout: Gitea strings, IANA status phrases, SPDX licenses | an id, per copy | 7,526 | 0 | 37,965 | 0 |
+| 400 advisory texts | a digit run equal to a registered number | 306 | 0 | 479 | 0 |
+| Advisory history, 75 snapshot pairs (three stamp rules) | a record pair, per rule | 315 | 0 | 533,667 to 533,837 per rule | 0 |
+
+Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full table, with a 95% interval on every rate, is in [bench/RESULTS.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/RESULTS.md). Across every class the pinned run has 0 false passes in 121,642 items that should flag and 0 false flags in 3,287,820 items that should pass. The class rows overlap (the same stamp pair is scored once per rule), so those totals count verdicts, not distinct items.
+
+How to read this, and where it stops:
+
+- **Items are correlated.** The keys of one locale file share a file and an author. Read "0 of 70,230" as "no failure in 70,230 correlated items", not as a probability. With no failures in `n` items the 95% upper bound is about `3.8 / n`.
+- **Labels can be wrong.** An independent script is a second implementation of the same rules, written by the same people. A rule both misread would pass. Only the holdout labels were also checked by hand (69 items).
+- **The holdout is the blind test.** Its labels and prediction were committed before the kit ran on it. The rest is data the authors have seen, and some rules were changed because of what it showed.
+- **Thin classes on real data.** The real advisory history holds one stamp-only event and no backward or unreadable stamp, so those rules are tested with injected edits and hand-chosen stamps. `numberTolerance`, `reviewerField` and `expiryField` have no real-data coverage. [METHOD.md](METHOD.md) lists the rate of each heuristic.
+- **Look-alike keys cost a file-level `unknown`.** On a case-sensitive key set (HTML entity names) 2 of 2 clean copies came back `unknown` until `foldCase: false` was set. The individual keys were still scored correctly.
+- **Public text data only.** Locale files, an entity table, an advisory database, status phrases and license lists. Price lists, catalogs and free-text records are not in the corpus, and your data may behave differently.
+- **It scores equality, not meaning.** `%s` against `%[1]s` prints the same and is reported as drift.
+- Sources, licenses and reproduction steps: [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md). Two generic diff libraries are compared with the kit in [docs/differential.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/docs/differential.md) and [docs/what-a-diff-cannot-answer.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/docs/what-a-diff-cannot-answer.md).
 
 ## Install
 
-parity-kit is private and not published, so you install it from a checkout. A fresh checkout has no compiler and no `dist/`, so build it once first:
+`npm i parity-kit`. Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
+
+| How you load it | Works on |
+| --- | --- |
+| `import { compareMirror } from 'parity-kit'` | Node 20 and newer |
+| `const { compareMirror } = require('parity-kit')` | Node 20.19 and newer, and Node 22.12 and newer, where `require()` can load an ES module. Not on Node 20.0 to 20.18 or 22.0 to 22.11: use the `import` line, or `await import('parity-kit')` from CommonJS. |
+
+The continuous-integration matrix builds and tests on Node 20, 20.19.0, 22, 22.12.0 and 24.
+
+To install from a checkout of the repository instead of the registry, build it once first. A fresh checkout has no compiler and no `dist/`:
 
 ```sh
 cd parity-kit
@@ -38,15 +92,6 @@ npm install ../parity-kit       # then install it from your project
 ```
 
 If you skip the first step the install stops with a message that names these two commands, instead of failing on a missing compiler.
-
-Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
-
-| How you load it | Works on |
-| --- | --- |
-| `import { compareMirror } from 'parity-kit'` | Node 20 and newer |
-| `const { compareMirror } = require('parity-kit')` | Node 20.19 and newer, and Node 22.12 and newer, where `require()` can load an ES module. Not on Node 20.0 to 20.18 or 22.0 to 22.11: use the `import` line, or `await import('parity-kit')` from CommonJS. |
-
-The continuous-integration matrix builds and tests on Node 20, 20.19.0, 22, 22.12.0 and 24.
 
 ## Worked example
 
