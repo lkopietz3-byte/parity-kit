@@ -1,0 +1,152 @@
+{
+ "note": "Raw downloads for the fresh holdout. Fetch each URL, check the SHA-256, then run label.py. Files are parsed as text, CSV, JSON and INI only; nothing downloaded is executed.",
+ "local": [
+  "node-status-codes.json: written by bench/holdout/extract-local.mjs from this runtime (Node v26.3.0 http.STATUS_CODES)",
+  "python-3.9-http: http.HTTPStatus from the Python 3.9.6 standard library, read by label.py"
+ ],
+ "files": [
+  {
+   "path": "iana-http.csv",
+   "url": "https://www.iana.org/assignments/http-status-codes/http-status-codes-1.csv",
+   "note": "IANA registry (retrieved 2026-10-14), CC0-1.0 per IANA registry terms",
+   "sha256": "6098f56a5f25ca050313838886090a5e58a40ca72c2b44eb19d5ac7c9f6b4896",
+   "bytes": 3334
+  },
+  {
+   "path": "go-status-go1.26.0.go",
+   "url": "https://raw.githubusercontent.com/golang/go/go1.26.0/src/net/http/status.go",
+   "note": "golang/go tag go1.26.0, BSD-3-Clause",
+   "sha256": "7633ca0ca545767f3db3d8960a96ee4ecd68fb39439c88b7c03efcb3d1786297",
+   "bytes": 7629
+  },
+  {
+   "path": "npm/statuses-1.5.0.tgz",
+   "url": "https://registry.npmjs.org/statuses/-/statuses-1.5.0.tgz",
+   "note": "npm statuses 1.5.0, MIT; member package/codes.json read",
+   "sha256": "283c1020a1c2b0bf0b9b0f123a6f248524b5623ec6fc4029cc65a139ca6ade3c",
+   "bytes": 5482
+  },
+  {
+   "path": "npm/statuses-2.0.2.tgz",
+   "url": "https://registry.npmjs.org/statuses/-/statuses-2.0.2.tgz",
+   "note": "npm statuses 2.0.2, MIT; member package/codes.json read",
+   "sha256": "ca800a24710488b568f4e73e8f570dd6b911c122cbf42b06930dee7c25949fe0",
+   "bytes": 4797
+  },
+  {
+   "path": "spdx-licenses-v3.29.0.json",
+   "url": "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/json/licenses.json",
+   "note": "spdx/license-list-data tag v3.29.0 (SPDX License List 3.29.0, released 2026-09-16); attribution given",
+   "sha256": "47d1cc681abe31166b342b6cc4aab13a6ba8ea5c48794697fe3bf8b1dbaf509a",
+   "bytes": 339359
+  },
+  {
+   "path": "npm/spdx-license-list-6.12.0.tgz",
+   "url": "https://registry.npmjs.org/spdx-license-list/-/spdx-license-list-6.12.0.tgz",
+   "note": "npm spdx-license-list 6.12.0, CC0-1.0; member package/spdx-full.json read",
+   "sha256": "54cc8d13086187333ca1457c8edaa06d9a412144f076aa7f7c1b59c4f3b0a1ef",
+   "bytes": 2527041
+  },
+  {
+   "path": "npm/spdx-license-ids-3.0.24.tgz",
+   "url": "https://registry.npmjs.org/spdx-license-ids/-/spdx-license-ids-3.0.24.tgz",
+   "note": "npm spdx-license-ids 3.0.24, CC0-1.0; members package/index.json and package/deprecated.json read",
+   "sha256": "2ccb1debbc8a6f5c588d8bac9a0a9b2420c635ebe9a0eaccd11b6ebc4b91bd9c",
+   "bytes": 5018
+  },
+  {
+   "path": "gitea/locale_en-US.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_en-US.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "c789f9bc6af6bb4dccb307c51b465e812a9e54c79e3b482d981c25633c634cc0",
+   "bytes": 217609
+  },
+  {
+   "path": "gitea/locale_de-DE.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_de-DE.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "6c57d6cc985316a35cbf92894960619d7ef475d4f17be7f665218879a1c3796c",
+   "bytes": 230275
+  },
+  {
+   "path": "gitea/locale_fr-FR.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_fr-FR.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "5f82977b3e19fda6a03565501563ea429ff6e1e96d63ef965297a9e64e07606b",
+   "bytes": 240906
+  },
+  {
+   "path": "gitea/locale_ja-JP.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_ja-JP.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "a29e96eda7fee88cbc4096640e46731d8a9f16112639baa10490a1d60e29aba8",
+   "bytes": 272166
+  },
+  {
+   "path": "gitea/locale_es-ES.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_es-ES.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "ea44390c36e134e04713d043e6a08c65d51329cb35d54baf0ae1dd091ce8ea30",
+   "bytes": 197991
+  },
+  {
+   "path": "gitea/locale_pt-BR.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_pt-BR.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "a288efb338c1263f2de5e0647402caed0f3e979f4888014833e76a069f6d94b5",
+   "bytes": 188133
+  },
+  {
+   "path": "gitea/locale_ru-RU.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_ru-RU.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "cb0f3058fef1b2b0a2e9af748b6e3ad605370fa5b74f6da7914f0b28b7042862",
+   "bytes": 273571
+  },
+  {
+   "path": "gitea/locale_zh-CN.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_zh-CN.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "b2ea198cae22e45b649f4303c5b2a910295fec26fba1177aeafba1733439aabb",
+   "bytes": 201479
+  },
+  {
+   "path": "gitea/locale_tr-TR.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_tr-TR.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "335a2ac6d737e8a515a9a5c0cc5ee6aee65d201566699237e4123ef760e3b671",
+   "bytes": 210954
+  },
+  {
+   "path": "gitea/locale_it-IT.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_it-IT.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "e15cd511994e9f698e383e3f6a9b485b9c29c00e3e3d84f357932c0d06c40c81",
+   "bytes": 149110
+  },
+  {
+   "path": "gitea/locale_pl-PL.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_pl-PL.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "887247aa8c5484c9d1532bb4f837cde23c095a030e92f0da0975bf83e4beee46",
+   "bytes": 125427
+  },
+  {
+   "path": "gitea/locale_nl-NL.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_nl-NL.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "6444543e558e33fdd6799d64b4c259b26ac01cb88834909193c458a03028176d",
+   "bytes": 127799
+  },
+  {
+   "path": "gitea/locale_sv-SE.ini",
+   "url": "https://raw.githubusercontent.com/go-gitea/gitea/v1.24.0/options/locale/locale_sv-SE.ini",
+   "note": "go-gitea/gitea tag v1.24.0, MIT",
+   "sha256": "cedb4e4dad2a74cda4553578b668d6ca17e959f34107f3efc24ea1538b96a51c",
+   "bytes": 92348
+  }
+ ],
+ "local_sha256": {
+  "node-status-codes.json": "a17d4a1116367417999d34b9e60b899a8b70b438ea9ec49af0e75b4e16ffb4cd"
+ }
+}
