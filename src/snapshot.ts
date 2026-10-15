@@ -290,21 +290,26 @@ function snap(value: unknown, ctx: Ctx, depth: number): Snap {
 }
 
 /**
- * Two finite numbers are within `tolerance` when `|a - b| <= tolerance + 8 * EPSILON * max(|a|, |b|, tolerance)`.
- * The second term is a few units of rounding error at the size of the numbers.
- * Without it a difference that is exactly the tolerance in decimal (1.25 and
- * 1.15 at 0.1) lands a hair over it in binary and is called different. It is
- * far smaller than any real decimal step at the same size (a cent at a million
- * dollars is ten million times larger), so nothing that is really over the
- * tolerance is let through. No clock and no randomness: the same inputs give
- * the same answer.
+ * Two finite numbers are within `tolerance` when
+ * `|a - b| <= tolerance + min(8 * EPSILON * max(|a|, |b|, tolerance), tolerance / 1000)`.
+ * The second term is a few units of binary rounding error at the size of the
+ * numbers. Without it a difference that is exactly the tolerance in decimal
+ * (1.25 and 1.15 at 0.1) lands a hair over it in binary and is called
+ * different. The cap keeps it small whatever the magnitude: it grows with the
+ * numbers, so uncapped it would exceed the tolerance itself near 1e15 and let
+ * a real difference through. Capped, nothing more than a thousandth over the
+ * tolerance is ever equal. Past about 5e9 at a tolerance of 0.01 the cap
+ * binds, and a pair whose binary gap lands more than a thousandth over the
+ * decimal tolerance is called different: that is a difference between the two
+ * doubles, and the doubles are what is compared. No clock and no randomness:
+ * the same inputs give the same answer.
  */
 function withinTolerance(a: number, b: number, tolerance: number): boolean {
   const diff = Math.abs(a - b);
   if (!Number.isFinite(diff)) return false;
   if (diff <= tolerance) return true;
   const scale = Math.max(Math.abs(a), Math.abs(b), tolerance);
-  return diff <= tolerance + 8 * Number.EPSILON * scale;
+  return diff <= tolerance + Math.min(8 * Number.EPSILON * scale, tolerance / 1000);
 }
 
 /**

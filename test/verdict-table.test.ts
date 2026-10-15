@@ -2794,3 +2794,54 @@ describe('hostile-F12 / hostile-F10: documented limits of what is read and what 
     expect(findHandTypedConstants('1.25 and 1.25', registry)).toHaveLength(80)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Release gate findings on 661e47a (each row names its finding id)
+// ---------------------------------------------------------------------------
+
+describe('gate-review:F1 / gate-false-pass:GFP-10 / gate-hostile:F10: the rounding allowance never grows past a thousandth of the tolerance', () => {
+  const eq = (a: number, b: number, tol: number): boolean =>
+    compareMirror([{ id: 'x', v: a }], [{ id: 'x', v: b }], { numberTolerance: tol }).ok
+
+  it.each([
+    ['cents at 6e12, 0.02 apart', 6e12, 6e12 + 0.02, 0.01],
+    ['cents at 4e13, 0.03 apart', 4e13, 4e13 + 0.03, 0.01],
+    ['tenths at 6e13, 0.2 apart', 6e13, 6e13 + 0.2, 0.1],
+    ['integers at 1.7e15, 1 apart, tolerance 0.5', 1.7e15, 1.7e15 + 1, 0.5],
+    ['integers at 1.7e15, 2 apart, tolerance 0.5', 1.7e15, 1.7e15 + 2, 0.5],
+    ['epoch microseconds, 1 apart, tolerance 0.001', 1.7e15, 1.7e15 + 1, 0.001],
+    ['2^53 region, 16 apart, tolerance 0.5', 9007199254740000, 9007199254740016, 0.5],
+    ['one unit at 1e15, tolerance 0.01', 1e15, 1e15 + 1, 0.01],
+    ['whole units at 9e15, tolerance 0.01', 9e15, 9e15 + 10, 0.01],
+    ['a thousandth of a unit above 5e12 at tolerance 0.005', 5e12, 5e12 + 0.0098, 0.005],
+  ])('gate-review:F1: %s is flagged', (_name, a, b, tol) => {
+    expect(eq(a, b, tol)).toBe(false)
+  })
+
+  it('gate-review:F1: small and medium magnitudes keep their behavior', () => {
+    expect(eq(1000, 1000.02, 0.01)).toBe(false)
+    expect(eq(1.25, 1.15, 0.1)).toBe(true)
+    expect(eq(1e6 + 0.25, 1e6 + 0.26, 0.01)).toBe(true)
+    expect(eq(1e9 + 0.25, 1e9 + 0.26, 0.01)).toBe(true)
+    expect(eq(1e9 + 0.25, 1e9 + 0.27, 0.01)).toBe(false)
+  })
+
+  it('gate-review:F1: no difference larger than 1.001 times the tolerance is ever equal, at any magnitude', () => {
+    let wrong = 0
+    let total = 0
+    for (const tol of [0.001, 0.01, 0.1, 0.5, 1, 25]) {
+      for (const magnitude of [1, 1e3, 1e6, 1e9, 1e11, 1e12, 1e13, 1e14, 1e15, 4e15, 1e17]) {
+        for (const factor of [1.01, 1.5, 2, 10]) {
+          const a = magnitude
+          const b = magnitude + tol * factor
+          // Skip pairs the doubles cannot tell apart or whose real gap fell under the tolerance.
+          if (Math.abs(b - a) <= tol * 1.001) continue
+          total += 1
+          if (eq(a, b, tol)) wrong += 1
+        }
+      }
+    }
+    expect(total).toBeGreaterThan(100)
+    expect(wrong).toBe(0)
+  })
+})

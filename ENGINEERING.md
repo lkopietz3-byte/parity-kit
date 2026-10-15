@@ -118,9 +118,11 @@ imports a `node:` module, so it is browser-safe.
   regular expressions run on single characters or short field names.
 - **Numbers are exact unless told otherwise.** `-0` equals `0`, `NaN` equals
   `NaN`, a tolerance applies only to finite numbers, a string never equals a
-  number. A tolerance above zero allows `8 * EPSILON * max(|a|, |b|, tolerance)`
+  number. A tolerance above zero allows `min(8 * EPSILON * max(|a|, |b|, tolerance), tolerance / 1000)`
   on top of itself, so a difference that is exactly the tolerance in decimal is
-  equal; at tolerance `0` nothing is added.
+  equal; at tolerance `0` nothing is added. The cap is what keeps the allowance
+  from growing with the numbers: uncapped it passes real differences near 1e15.
+  `gate-review:F1` pins it at magnitudes up to 1e17.
 - **No clock.** `now` is an argument. Without it, future dates are not judged
   and nothing reads the time. A bare date gets a 14-hour future grace (UTC+14
   is the furthest-ahead civil offset); an explicit-offset timestamp gets none.
