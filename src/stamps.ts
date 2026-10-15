@@ -275,8 +275,8 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
   let compared = 0;
 
   const markUnknown = (id: Key, side: 'before' | 'after', field: string, reason: UnknownReason, value: Snap | undefined): void => {
-    const item: UnknownStamp = { id, side, field, reason };
-    if (value !== undefined) item.value = plainValue(value);
+    // A literal with the optional property inside it, never an assignment: an assignment would run an inherited read-only or accessor `value`.
+    const item: UnknownStamp = value === undefined ? { id, side, field, reason } : { id, side, field, reason, value: plainValue(value) };
     unknown.push(item);
   };
 

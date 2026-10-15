@@ -20,7 +20,11 @@ every input is treated as hostile:
 - Text scanning is linear in the length of the text, with no unanchored
   backtracking regular expressions.
 - Reported values are copies with `null`-prototype objects; keys such as
-  `__proto__` are data and cannot pollute a prototype.
+  `__proto__` are data and cannot pollute a prototype. A prototype that was
+  already polluted (`Object.prototype.get`, `.value`, `.id` and similar) does not
+  change a verdict or the shape of a report. Pollution of `Array.prototype.constructor`
+  or `Object.prototype.constructor` makes a call throw or an empty object unsupported;
+  it never produces a pass.
 
 ## Reporting a vulnerability
 

@@ -3246,3 +3246,58 @@ describe('gate-hostile:F4 / gate-review:F8: foldInvisible: false keeps keys that
     ).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
   })
 })
+
+describe('gate-false-pass:GFP-05: a polluted Object.prototype changes neither the verdict nor the shape of a report', () => {
+  const withPollution = <T>(name: string, descriptor: PropertyDescriptor, fn: () => T): T => {
+    Object.defineProperty(Object.prototype, name, { configurable: true, ...descriptor })
+    try {
+      return fn()
+    } finally {
+      delete (Object.prototype as unknown as Record<string, unknown>)[name]
+    }
+  }
+  const own = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (_k, v: unknown) => (typeof v === 'bigint' ? `${v}n` : v)))
+  const objectDiff = (): unknown => compareMirror([{ id: 'a', v: { x: 1 }, w: [1] }], [{ id: 'a', v: { x: 2 }, w: [2] }])
+  const badStamp = (): unknown =>
+    auditReviewStamps([{ id: 'a', r: 'x' }], [{ id: 'a', r: 'y' }], { reviewedField: 'r', sourceFields: [] })
+  const badRecords = (): unknown => compareMirror([{ id: 'a', v: new Map() }, 5, { id: 'b' }], [{ id: 'a' }, { id: 'b' }])
+  const baseline = { objectDiff: own(objectDiff()), badStamp: own(badStamp()), badRecords: own(badRecords()) }
+
+  const getters: Array<[string, PropertyDescriptor]> = [
+    ['a function', { writable: true, value: () => 1 }],
+    ['a string', { writable: true, value: 'x' }],
+    ['a number', { writable: true, value: 7 }],
+    ['an accessor returning undefined', { get: () => undefined }],
+    ['a read-only value', { writable: false, value: 'RO' }],
+  ]
+
+  it.each(getters)('gate-false-pass:GFP-05: Object.prototype.get as %s does not break an object-valued difference', (_name, descriptor) => {
+    expect(own(withPollution('get', descriptor, objectDiff))).toEqual(baseline.objectDiff)
+  })
+
+  it.each(getters)('gate-false-pass:GFP-05: Object.prototype.set as %s does not break an object-valued difference', (_name, descriptor) => {
+    expect(own(withPollution('set', descriptor, objectDiff))).toEqual(baseline.objectDiff)
+  })
+
+  it.each(getters)('gate-false-pass:GFP-05: Object.prototype.value as %s does not break an unusable-stamp report', (_name, descriptor) => {
+    expect(own(withPollution('value', descriptor, badStamp))).toEqual(baseline.badStamp)
+  })
+
+  it.each(['id', 'path', 'detail', 'value'])('gate-false-pass:GFP-05: a writable Object.prototype.%s never reaches an invalid entry', (name) => {
+    const got = withPollution(name, { writable: true, value: 'POLLUTED' }, badRecords) as { invalid: Array<Record<string, unknown>> }
+    expect(own(got)).toEqual(baseline.badRecords)
+    for (const entry of got.invalid) expect(Object.hasOwn(entry, name) ? entry[name] : undefined).not.toBe('POLLUTED')
+  })
+
+  it.each(['id', 'path', 'detail', 'value'])('gate-false-pass:GFP-05: a read-only Object.prototype.%s does not throw out of a read', (name) => {
+    const descriptor = { writable: false, value: 'RO' }
+    expect(own(withPollution(name, descriptor, badRecords))).toEqual(baseline.badRecords)
+    expect(own(withPollution(name, descriptor, badStamp))).toEqual(baseline.badStamp)
+  })
+
+  it.each(['id', 'path', 'detail', 'value'])('gate-false-pass:GFP-05: an accessor-only Object.prototype.%s does not throw out of a read', (name) => {
+    const descriptor = { get: () => 'ACCESSOR' }
+    expect(own(withPollution(name, descriptor, badRecords))).toEqual(baseline.badRecords)
+    expect(own(withPollution(name, descriptor, badStamp))).toEqual(baseline.badStamp)
+  })
+})

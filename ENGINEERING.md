@@ -100,6 +100,17 @@ imports a `node:` module, so it is browser-safe.
 - **Descriptors are classified by own properties.** A data descriptor is one with an own
   `value`. `'value' in desc` is never used: it walks the prototype chain, and a polluted
   `Object.prototype.value` would turn a getter into a data property.
+- **A polluted `Object.prototype` reaches no report.** Every object the kit builds for a
+  report or reads back from itself is made so an inherited name cannot matter: result
+  objects add optional properties with spreads, never by assignment (an inherited read-only
+  or accessor `value`, `id`, `path` or `detail` would throw), internal records are read with
+  own-property reads, and the descriptor that copies a value into a report has a `null`
+  prototype (an inherited `get` or `set` would be taken for an accessor). The pollution
+  matrix in `gate-false-pass:GFP-05` pins `get`, `set`, `value`, `id`, `path` and `detail`.
+  Two kinds remain by design: a polluted `Object.prototype.constructor` makes an empty `{}`
+  `unsupported-value` (the conservative reading, because a Promise cannot be ruled out), and
+  a polluted `Array.prototype.constructor` makes the array methods the kit uses throw a
+  `TypeError` (the species lookup). Both fail closed; neither returns a verdict.
 - **Aliased objects are read once per appearance.** The same object under two fields is
   snapshotted twice, so a getter on it runs twice. Remembering objects by identity would let
   shared structure make snapshots and comparisons exponential, which `maxNodes` exists to

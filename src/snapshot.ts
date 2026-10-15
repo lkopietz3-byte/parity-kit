@@ -337,12 +337,14 @@ export function plainValue(s: Snap): unknown {
   if (s instanceof ArrSnap) return s.items.map(plainValue);
   const out = Object.create(null) as Record<string, unknown>;
   for (let i = 0; i < s.keys.length; i += 1) {
-    Object.defineProperty(out, s.keys[i] as string, {
+    // A null-prototype descriptor: an object literal would inherit a polluted Object.prototype.get or .set.
+    const descriptor = Object.assign(Object.create(null) as PropertyDescriptor, {
       value: plainValue(s.vals[i]),
       enumerable: true,
       writable: true,
       configurable: true,
     });
+    Object.defineProperty(out, s.keys[i] as string, descriptor);
   }
   return out;
 }
@@ -402,9 +404,14 @@ function readRecord(
   ctx.trail.length = 0;
   let id: Key | undefined = mode === 'object' ? position : undefined;
   const bad = (reason: InvalidReason, detail: string, path?: string): void => {
-    const item: DatasetInvalid = { position, reason, detail };
-    if (id !== undefined) item.id = id;
-    if (path !== undefined && path !== '') item.path = path;
+    // Built with spreads, which define own properties and never run an inherited setter, so a polluted Object.prototype cannot reach it.
+    const item: DatasetInvalid = {
+      position,
+      reason,
+      detail,
+      ...(id === undefined ? {} : { id }),
+      ...(path === undefined || path === '' ? {} : { path }),
+    };
     invalid.push(item);
     entries.push({ id, position, fields: undefined });
   };

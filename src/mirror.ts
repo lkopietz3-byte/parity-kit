@@ -7,6 +7,7 @@ import {
   optNames,
   optString,
   readOptions,
+  readOwn,
   type Budget,
 } from './options.js';
 import {
@@ -128,10 +129,19 @@ export function duplicatesOf(side: string, indexed: Indexed): DuplicateKey[] {
 
 export function invalidOf(side: string, read: ReadDataset): InvalidEntry[] {
   return read.invalid.map((item) => {
-    const entry: InvalidEntry = { side, position: item.position, reason: item.reason };
-    if (item.id !== undefined) entry.id = item.id;
-    if (item.path !== undefined) entry.path = item.path;
-    if (item.detail !== undefined) entry.detail = item.detail;
+    // Optional properties are read as own properties only and added with spreads, so a polluted
+    // Object.prototype.id, .path or .detail is never copied into a report and never throws.
+    const id = readOwn(item, 'id') as Key | undefined;
+    const path = readOwn(item, 'path') as string | undefined;
+    const detail = readOwn(item, 'detail') as string | undefined;
+    const entry: InvalidEntry = {
+      side,
+      position: item.position,
+      reason: item.reason,
+      ...(id === undefined ? {} : { id }),
+      ...(path === undefined ? {} : { path }),
+      ...(detail === undefined ? {} : { detail }),
+    };
     return entry;
   });
 }
@@ -175,7 +185,7 @@ export function findUnknownFields(
 /** How many records of a side could not be read well enough to know their id. */
 function unreadableIds(read: ReadDataset): number {
   let count = 0;
-  for (const item of read.invalid) if (item.reason === 'unreadable' && item.id === undefined) count += 1;
+  for (const item of read.invalid) if (item.reason === 'unreadable' && readOwn(item, 'id') === undefined) count += 1;
   return count;
 }
 
