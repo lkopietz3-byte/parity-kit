@@ -47,7 +47,7 @@ all is reported.
 | `duplicateKeys` | One key is used by more than one record on a side. | Which record is meant is not knowable. Those records are not compared but still count as present. | Fix the data. |
 | `suspectKeys` | Two keys look alike but are not identical. | A renamed key (a trailing zero-width character, a Cyrillic letter) must not be merged silently. The status is `unknown`. | `foldCase: false` stops grouping keys that differ only by case. |
 | `unknownFields` | A name you gave in `fields`, `ignoreFields` or `reviewedField` is in no record. | A misspelled name would otherwise compare nothing. | Correct the name. |
-| `noFieldsCompared` | Records matched but `ignoreFields` removed every field they carry. | A run that checked nothing is not a pass. | Narrow `ignoreFields`. Records that carry only an id are an honest presence check and do not set this. |
+| `noFieldsCompared` | Records matched but `ignoreFields` removed every field they carry. The key column does not count as a field, so naming the key in `fields` does not avoid it. | A run that checked nothing is not a pass. | Narrow `ignoreFields`. Records that carry only an id are an honest presence check and do not set this. |
 | `invalid` | A record or dataset could not be read, with a reason. | One bad record must not hide the others, and must not pass. | Fix the record. `allowEmpty: true` accepts an empty canonical set. |
 
 ### `auditReviewStamps`

@@ -2845,3 +2845,78 @@ describe('gate-review:F1 / gate-false-pass:GFP-10 / gate-hostile:F10: the roundi
     expect(wrong).toBe(0)
   })
 })
+
+describe('gate-review:F3 / gate-review:F7 / gate-hostile:F5: the key column is not a comparison', () => {
+  const canon = [{ id: 'a', v: 1.25 }]
+  const mirror = [{ id: 'a', v: 1.0 }]
+
+  it('gate-review:F3: naming the key in fields and ignoring every real field compared nothing, so it is unknown', () => {
+    const r = compareMirror(canon, mirror, { fields: ['id', 'v'], ignoreFields: ['v'] })
+    expect(r.ok).toBe(false)
+    expect(r.status).toBe('unknown')
+    expect(r.noFieldsCompared).toBe(true)
+    expect(r.compared).toBe(1)
+  })
+
+  it('gate-review:F3: reviewedField set to the key gives the same answer', () => {
+    const r = compareMirror(canon, mirror, { reviewedField: 'id', ignoreFields: ['v'] })
+    expect(r.status).toBe('unknown')
+    expect(r.noFieldsCompared).toBe(true)
+  })
+
+  it('gate-review:F3: the same call with a real field left in still compares and flags it', () => {
+    const r = compareMirror(canon, mirror, { fields: ['id', 'v'] })
+    expect(r.status).toBe('flagged')
+    expect(r.noFieldsCompared).toBe(false)
+  })
+
+  it('gate-review:F3: records that carry only an id stay an honest presence check, also with the key named in fields', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'b' }], [{ id: 'a' }, { id: 'b' }], { fields: ['id'] })
+    expect(r.status).toBe('ok')
+    expect(r.noFieldsCompared).toBe(false)
+    expect(compareMirror([{ id: 'a' }], [{ id: 'b' }], { fields: ['id'] }).status).toBe('flagged')
+  })
+
+  it('gate-review:F3: ignoring the key itself does not turn a presence check into a no-op', () => {
+    const r = compareMirror([{ id: 'a' }, { id: 'b' }], [{ id: 'a' }, { id: 'b' }], { ignoreFields: ['id'] })
+    expect(r.status).toBe('ok')
+    expect(r.unknownFields).toEqual([])
+  })
+
+  it('gate-review:F7: a fields list that ignoreFields cancels is still refused', () => {
+    expect(() => compareMirror(canon, mirror, { fields: ['v'], ignoreFields: ['v'] })).toThrowError(
+      expect.objectContaining({ code: 'bad-options' }) as Error,
+    )
+  })
+
+  it('gate-review:F7: with a review field that still counts, the review dates are compared and the call is not refused', () => {
+    const a = [{ id: 'a', v: 1, lastReviewed: '2026-01-01' }]
+    const same = compareMirror(a, [{ id: 'a', v: 2, lastReviewed: '2026-01-01' }], { fields: ['v'], ignoreFields: ['v'], reviewedField: 'lastReviewed' })
+    expect(same.status).toBe('ok')
+    expect(same.noFieldsCompared).toBe(false)
+    const moved = compareMirror(a, [{ id: 'a', v: 2, lastReviewed: '2026-02-01' }], { fields: ['v'], ignoreFields: ['v'], reviewedField: 'lastReviewed' })
+    expect(moved.status).toBe('flagged')
+    expect(moved.changed.map((c) => c.field)).toEqual(['lastReviewed'])
+  })
+
+  it('gate-review:F7: when the review field is ignored too, nothing would be compared and the call is refused', () => {
+    expect(() =>
+      compareMirror(canon, mirror, { fields: ['v'], ignoreFields: ['v', 'lastReviewed'], reviewedField: 'lastReviewed' }),
+    ).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+
+  it('gate-hostile:F5: in an object-keyed dataset the key name always counts as present (documented): fields: ["id"] compares nothing and is ok', () => {
+    const r = compareMirror({ a: { v: 1 }, b: { v: 2 } }, { a: { v: 9 }, b: { v: 2 } }, { fields: ['id'] })
+    expect(r.status).toBe('ok')
+    expect(r.unknownFields).toEqual([])
+    expect(r.compared).toBe(2)
+    // The README says so, and says what to do instead: name the fields to compare.
+    expect(compareMirror({ a: { v: 1 } }, { a: { v: 9 } }, { fields: ['v'] }).status).toBe('flagged')
+  })
+
+  it('gate-hostile:F5: in an array the key name still counts as present', () => {
+    const r = compareMirror(canon, canon.map((x) => ({ ...x })), { fields: ['id', 'v'] })
+    expect(r.unknownFields).toEqual([])
+    expect(r.status).toBe('ok')
+  })
+})

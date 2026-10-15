@@ -189,7 +189,7 @@ Compares a canonical set to one mirror. Each argument is an **array of records**
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `key` | `"id"` | Field that identifies a record in an array. In an object keyed by id the property name is the id, and a record that also has this field must agree with it (see Keys). |
-| `fields` | every own enumerable field of either record | Compare only these fields. Must name at least one field, and at least one must not be in `ignoreFields`; an empty list, or a list that `ignoreFields` cancels entirely, throws `bad-options` because it would compare nothing and always pass. |
+| `fields` | every own enumerable field of either record | Compare only these fields. Must name at least one field, and at least one must not be in `ignoreFields` (a `reviewedField` that `ignoreFields` does not remove counts, because it is always compared); an empty list, or a list that `ignoreFields` cancels entirely, throws `bad-options` because it would compare nothing and always pass. |
 | `ignoreFields` | none | Fields left out of the comparison. A name that appears in no record lands in `unknownFields`. |
 | `reviewedField` | none | The review-date field. Turns on `stampHidesDrift`. It is always compared, even when `fields` does not list it, so a mirror with a different review date is never silent. `ignoreFields` can still remove it. |
 | `numberTolerance` | `0` | Two finite numbers are equal when they differ by at most this, plus a rounding allowance of at most a thousandth of the tolerance (see How values are compared). One absolute number for every number in every compared field, so it also waives small real changes in small-scale fields (see How values are compared). |
@@ -204,7 +204,7 @@ Returns:
 | `ok` | `true` only when every list below is empty. |
 | `status` | `flagged` (positive evidence of drift), `unknown` (nothing flagged, but something could not be checked), or `ok`. |
 | `compared` | Records present once on both sides and compared field by field. |
-| `noFieldsCompared` | `true` when records were matched but `ignoreFields` removed every field they carry, so no field was checked. The result is `unknown`, never `ok`. Records that carry only an id are an honest presence check and do not set it. |
+| `noFieldsCompared` | `true` when records were matched but `ignoreFields` removed every field they carry, so no field was checked. The result is `unknown`, never `ok`. Records that carry only an id are an honest presence check and do not set it. The key column is equal by construction, so it never counts as a compared field: naming the key in `fields` (or using it as `reviewedField`) and ignoring every other field sets it too. |
 | `missing` | Keys in the canonical set that the mirror lacks. |
 | `extra` | Keys in the mirror that the canonical set lacks. |
 | `changed` | `{ id, field, change, canonical, mirror }`. `change` is `different`, `missing-in-mirror` or `extra-in-mirror`. |
@@ -275,7 +275,7 @@ Returns `ok`, `status`, `compared`, and:
 - **The remaining exotic-object gap.** Proxies are read through their traps, and host objects or built-ins disguised with a replaced prototype **and** their own enumerable properties are read as plain data. This is a documented limit, not a promised check.
 - Reading a value never runs a getter on a prototype and never reads a property to classify it. Nothing is copied or cloned to classify it either, so classifying an object cannot run an excluded getter, cannot rewrite another record, and costs no memory proportional to its contents. Every property that is read is read once: the key, each selected field and the reviewed field are each looked up a single time, and the value used is the one from that lookup. The only caller code that can run is an own getter on a property being read (once), a Proxy trap, and, for a real `Promise`, the `constructor` lookup that `then` performs.
 - A Promise is recognized by calling `then`, which then looks up `constructor`. `then` is only called when that lookup cannot run caller code: the object has no own `constructor` (or an own data one holding `undefined`) and its prototype is `null` or the untouched `Object.prototype`. Otherwise the object is `unsupported-value`, never plain data. On Node before 24, which has no `Error.isError`, an Error is recognized through `Object.prototype.toString`, used only under the same kind of precondition (no own `Symbol.toStringTag`, a `null` or untouched `Object.prototype`); otherwise the object is `unsupported-value`. If your Proxy has a `get` trap, that fallback path can run it.
-- A key field is left out of the compared fields unless you ask for it: name it in `fields`, or use it as `reviewedField`. Then it is read like any other field.
+- A key field is left out of the compared fields unless you ask for it: name it in `fields`, or use it as `reviewedField`. Then it is read like any other field, though it never counts as a comparison (see `noFieldsCompared`). In an object keyed by id the key field's name always counts as present, because the property name is the id: `fields: ['id']` there selects nothing and the result is `ok` (a presence check), so name the fields you want compared.
 - Results never alias your input. Reported values are copies (objects have a `null` prototype).
 
 ### How values are compared

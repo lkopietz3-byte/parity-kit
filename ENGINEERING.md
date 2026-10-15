@@ -41,7 +41,13 @@ imports a `node:` module, so it is browser-safe.
   field of every matched record, `compareMirror` is `unknown` with
   `noFieldsCompared`; when both audit snapshots have keyed records and share no
   key, `auditReviewStamps` is `unknown` with `noOverlap`. Records that carry
-  only an id are an honest presence check and stay `ok`. A name given in
+  only an id are an honest presence check and stay `ok`. The key column is
+  equal by construction, so it counts neither as examined nor as suppressed
+  (`gate-review:F3`). A `fields` list that `ignoreFields` cancels is refused
+  unless a `reviewedField` that is not ignored still gives something to
+  compare (`gate-review:F7`). In an object-keyed dataset the key field's name
+  always counts as present (a committed row pins it), so `fields: ['id']`
+  there is a presence check (`gate-hostile:F5`). A name given in
   `ignoreFields` is checked like any other configured name (`unknownFields`),
   because ignoring less means more fields count as evidence in the audit: a typo
   there fails open. Registry entries accept only `id`, `value` and `forms`, and a

@@ -136,8 +136,9 @@ export function invalidOf(side: string, read: ReadDataset): InvalidEntry[] {
 
 /**
  * Which of `names` appear in no readable record of the given datasets? The key
- * field counts as present when any record has a usable key. Empty when there is
- * no readable record at all (there is nothing to say a name is missing from).
+ * field counts as present when any record has a usable key (in an object keyed
+ * by id too, where the property name is the key). Empty when there is no
+ * readable record at all (there is nothing to say a name is missing from).
  * One pass over the fields that were read.
  */
 export function findUnknownFields(
@@ -229,17 +230,19 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
   const key = optString(o, 'key', WHAT) ?? 'id';
   const fields = optNames(o, 'fields', WHAT);
   const ignoreFields = optNames(o, 'ignoreFields', WHAT) ?? [];
+  const reviewedField = optString(o, 'reviewedField', WHAT);
   if (fields !== undefined) {
     // An empty selection (for example Object.keys of an empty schema) would compare nothing and pass.
     if (fields.length === 0) {
       throw new ParityError('bad-options', `${WHAT}: option "fields" must name at least one field`);
     }
+    // `reviewedField` is always compared, so it counts as a selection unless `ignoreFields` removes it.
     const ignored = new Set(ignoreFields);
-    if (fields.every((name) => ignored.has(name))) {
+    const reviewCounts = reviewedField !== undefined && !ignored.has(reviewedField);
+    if (!reviewCounts && fields.every((name) => ignored.has(name))) {
       throw new ParityError('bad-options', `${WHAT}: every field in "fields" is also in "ignoreFields", so nothing would be compared`);
     }
   }
-  const reviewedField = optString(o, 'reviewedField', WHAT);
   const tolerance = readTolerance(o, WHAT);
   const allowEmpty = optBoolean(o, 'allowEmpty', WHAT) ?? false;
   const foldCase = optBoolean(o, 'foldCase', WHAT) ?? true;
@@ -253,7 +256,8 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     for (const name of ignoreFields) set.add(name);
     names = [...set];
   }
-  const cfg = { key, names, includeKey: reviewedField === key || (fields?.includes(key) ?? false) };
+  const includeKey = reviewedField === key || (fields?.includes(key) ?? false);
+  const cfg = { key, names, includeKey };
   const c = readDataset(canonical, 'canonical', cfg, budget);
   const m = readDataset(mirror, 'mirror', cfg, budget);
   const ci = indexEntries(c.entries);
@@ -294,11 +298,13 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
     for (const field of sortedUnion(cf, mf)) {
       // The review field is compared even when `fields` does not list it, so a different review value is never silent.
       if (only !== null && !only.has(field) && field !== reviewedField) continue;
+      // The key column is equal by construction, so it is neither a comparison nor an ignored comparison.
+      const keyColumn = includeKey && field === key;
       if (ignore.has(field)) {
-        suppressed += 1;
+        if (!keyColumn) suppressed += 1;
         continue;
       }
-      examined += 1;
+      if (!keyColumn) examined += 1;
       const a = cf.get(field);
       const b = mf.get(field);
       const inC = cf.has(field);
