@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-14
+## [0.1.0] - 2026-10-15
 
 First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newer.
 

@@ -32,22 +32,40 @@ commit message and `CHANGELOG.md`.
 
 ## Publishing
 
-parity-kit is a public MIT package. It is published only by pushing a `v*` tag
-whose version matches `package.json`; `.github/workflows/release.yml` then runs
-the checks and publishes with npm trusted publishing. Never run `npm publish`
-by hand, and do not push tags without the owner's decision. Before tagging,
-update `CHANGELOG.md` and run `npm run verify`, `npm run attw` and
-`npm pack --dry-run`. The release job also requires a successful `Verify` workflow
-run on the tagged commit (so tag a commit that went through the pull request or
-`main` checks), runs the checks once, and publishes with `--ignore-scripts` so the
-test suite does not run a second time.
+parity-kit is a public MIT package. After 0.1.0, every release goes only through
+`.github/workflows/release.yml`: push a `v*` tag whose version matches `package.json`
+and the workflow runs the checks and publishes with npm trusted publishing. Do not push
+tags without the owner's decision. Before tagging, update `CHANGELOG.md` and run
+`npm run verify`, `npm run attw` and `npm pack --dry-run`. The release job also requires a
+successful `Verify` workflow run on the tagged commit (so tag a commit that went through the
+pull request or `main` checks), runs the checks once, and publishes with `--ignore-scripts`
+so the test suite does not run a second time.
 
-The name `parity-kit` is unclaimed on npm, so the first publish through trusted
-publishing needs a pending trusted publisher: on npmjs.com add one for the package
-`parity-kit`, the repository `lkopietz3-byte/parity-kit` and the workflow file
-`release.yml`, shortly before pushing the first tag (an unused setting expires). The
-README links to `bench/` files under `blob/main`, which resolve once the release
-branch is merged to `main`.
+### First publish (0.1.0)
+
+npm's documentation does not say whether a name that has never been published can be given
+a trusted publisher, so 0.1.0 has two possible paths, and only the owner takes them (an agent
+never runs `npm trust`, `npm login` or `npm publish`):
+
+1. On tag day the owner first tries to set up trusted publishing for the new name:
+
+   ```bash
+   npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes
+   ```
+
+   If npm accepts it, there is a pending trusted publisher for `release.yml`. Push the `v0.1.0`
+   tag on the green `main` commit and the workflow publishes 0.1.0 with provenance. An unused
+   setting expires, so do this on the day of the tag.
+2. If npm refuses because the package does not exist, the owner runs `npm publish` once, by
+   hand, from a clean checkout of the tagged commit (`git clone`, `git checkout v0.1.0`,
+   `npm ci`; the `prepublishOnly` script runs `npm run verify`). That publish has no provenance.
+   The owner then sets up trusted publishing for `release.yml` the same day with the `npm trust`
+   command above, now that the package exists. Version 0.1.1 and every later one publish from
+   the tag with provenance. Pushing the `v0.1.0` tag afterward is safe: the workflow skips a
+   version that is already on the registry.
+
+The README links to `bench/` files under `blob/main`, which resolve once the release branch
+is merged to `main`.
 
 Security problems go through GitHub private vulnerability reporting, not a
 public issue (see `SECURITY.md`).

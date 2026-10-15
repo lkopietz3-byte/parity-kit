@@ -217,13 +217,19 @@ is not private, says `MIT`, names the repository, homepage and bugs URLs, and
 that the tarball ships `LICENSE`, `README.md`, `METHOD.md` and `CHANGELOG.md`
 beside `dist/` and nothing else.
 
-Publishing happens only when a `v*` tag is pushed. `.github/workflows/release.yml`
-refuses to run off a tag, refuses a tag that does not match the `package.json`
-version, requires a successful `Verify` workflow run on the tagged commit (the
-Node 20 to 24 consumer matrix included), runs the audit, `npm run verify` and
-`npm run attw` once, skips a version that is already on the registry, and
-publishes with trusted publishing (`id-token: write`, no stored token, no npm
-cache) and `--ignore-scripts`, so the tested `dist/` is what ships and the suite
-does not run again. The first publish of the unclaimed name needs a pending
-trusted publisher for `release.yml` set up on npmjs.com beforehand
-(`CONTRIBUTING.md`). Never run `npm publish` by hand.
+Publishing happens when a `v*` tag is pushed.
+`.github/workflows/release.yml` refuses to run off a tag, refuses a tag that does not
+match the `package.json` version, requires a successful `Verify` workflow run on the tagged
+commit (the Node 20 to 24 consumer matrix included), runs the audit, `npm run verify` and
+`npm run attw` once, skips a version that is already on the registry, and publishes with
+trusted publishing (`id-token: write`, no stored token, no npm cache) and `--ignore-scripts`,
+so the tested `dist/` is what ships and the suite does not run again.
+
+The 0.1.0 path is the one exception to "only through the workflow". npm's docs do not say
+whether a never-published name can be given a trusted publisher. On tag day the owner first
+tries `npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes`.
+If npm refuses because the package does not exist, the owner (never an agent) runs
+`npm publish` once from a clean checkout of the tagged commit, which gives 0.1.0 no
+provenance, then sets up trusted publishing the same day, so 0.1.1 onward publish from the
+tag with provenance. Every later release goes only through `release.yml`; nobody runs
+`npm publish` by hand again (`CONTRIBUTING.md` has the steps).
