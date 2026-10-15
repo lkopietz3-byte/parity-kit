@@ -8,6 +8,7 @@ import {
   optNames,
   optString,
   readOptions,
+  refuseExtraArguments,
 } from './options.js';
 import { dateTime, plainValue, readDataset, snapEqual, type DatasetEntry, type Snap } from './snapshot.js';
 import type { DuplicateKey, InvalidEntry, Key, Limits, SuspectKeyGroup } from './types.js';
@@ -200,6 +201,8 @@ function stampText(value: Snap | undefined): string {
  * or a size limit.
  */
 export function auditReviewStamps(before: unknown, after: unknown, options: StampOptions): StampAudit {
+  // The count of arguments given is the point, so this reads `arguments` rather than a rest parameter.
+  refuseExtraArguments(arguments.length, 3, WHAT);
   const o = readOptions(options, OPTION_NAMES, WHAT);
   const reviewedField = optString(o, 'reviewedField', WHAT);
   if (reviewedField === undefined) {

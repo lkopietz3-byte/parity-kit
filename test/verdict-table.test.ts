@@ -3301,3 +3301,30 @@ describe('gate-false-pass:GFP-05: a polluted Object.prototype changes neither th
     expect(own(withPollution(name, descriptor, badStamp))).toEqual(baseline.badStamp)
   })
 })
+
+describe('gate-hostile:F7: arguments past the documented ones are refused, not ignored', () => {
+  const loose = (fn: unknown) => fn as (...args: unknown[]) => unknown
+  const refused = expect.objectContaining({ name: 'ParityError', code: 'bad-options' }) as Error
+
+  it('gate-hostile:F7: an options bag passed to findHandTypedConstants, which takes none, throws', () => {
+    expect(() => loose(findHandTypedConstants)('rate 1.25', [{ id: 'c', value: 1.25 }], { caseSensitive: false })).toThrowError(refused)
+  })
+
+  it('gate-hostile:F7: a fourth argument to compareMirror or a fourth to auditReviewStamps throws', () => {
+    expect(() => loose(compareMirror)([{ id: 'a' }], [{ id: 'a' }], undefined, { fields: ['id'] })).toThrowError(refused)
+    const stamp = { reviewedField: 'r', sourceFields: [] as string[] }
+    expect(() => loose(auditReviewStamps)([{ id: 'a', r: '2026-01-01' }], [{ id: 'a', r: '2026-01-01' }], stamp, { now: 1 })).toThrowError(refused)
+  })
+
+  it('gate-hostile:F7: the documented arities, with or without the optional argument, still work', () => {
+    expect(findHandTypedConstants('rate 1.25', [{ id: 'c', value: 1.25 }])).toHaveLength(1)
+    expect(compareMirror([{ id: 'a' }], [{ id: 'a' }]).status).toBe('ok')
+    expect(compareMirror([{ id: 'a' }], [{ id: 'a' }], undefined).status).toBe('ok')
+    expect(loose(compareMirror)([{ id: 'a' }], [{ id: 'a' }], {}) as { status: string }).toMatchObject({ status: 'ok' })
+    expect(auditReviewStamps([{ id: 'a', r: '2026-01-01' }], [{ id: 'a', r: '2026-01-01' }], { reviewedField: 'r', sourceFields: [] }).status).toBe('ok')
+  })
+
+  it('gate-hostile:F7: a function passed straight to Array.map is refused, never run with the index as its options', () => {
+    expect(() => [[{ id: 'a' }]].map(loose(compareMirror).bind(null, [{ id: 'a' }]))).toThrowError(refused)
+  })
+})

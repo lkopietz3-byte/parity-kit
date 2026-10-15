@@ -93,6 +93,18 @@ export function readOptions(
   return out;
 }
 
+/**
+ * Refuse arguments past the documented ones. JavaScript drops them without a
+ * word, so an options bag handed to a function that takes none (or a fourth
+ * argument to one that takes three) would turn the check it was meant to
+ * configure off. `given` is `arguments.length` of the caller.
+ */
+export function refuseExtraArguments(given: number, allowed: number, what: string): void {
+  if (given > allowed) {
+    throw new ParityError('bad-options', `${what}: takes ${allowed} argument${allowed === 1 ? '' : 's'}, got ${given}; an extra argument would be ignored, so it is refused`);
+  }
+}
+
 export function optString(o: Record<string, unknown>, name: string, what: string): string | undefined {
   const v = o[name];
   if (v === undefined) return undefined;

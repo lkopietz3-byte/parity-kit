@@ -1,6 +1,6 @@
 import { ParityError, isOwnError } from './errors.js';
 import { describeError } from './snapshot.js';
-import { descriptorValue, isPlainObject, readOwn } from './options.js';
+import { descriptorValue, isPlainObject, readOwn, refuseExtraArguments } from './options.js';
 
 /** A constant that should live in one place. */
 export interface RegisteredConstant {
@@ -478,6 +478,8 @@ interface RawHit {
  * Results are ordered by position, then by registry order.
  */
 export function findHandTypedConstants(text: string, registry: readonly RegisteredConstant[]): HandTypedMatch[] {
+  // The count of arguments given is the point, so this reads `arguments` rather than a rest parameter.
+  refuseExtraArguments(arguments.length, 2, 'findHandTypedConstants');
   if (typeof text !== 'string') {
     throw new ParityError('bad-input', 'findHandTypedConstants: text must be a string');
   }

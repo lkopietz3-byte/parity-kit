@@ -264,7 +264,7 @@ Returns `ok`, `status`, `compared`, and:
 - A dataset is an **array of records** or a **plain object keyed by id**. In an object, the property name is the id and the order Proxy traps report keys in never matters, because keys are sorted.
 - A record must be a **plain object** (its prototype is `null` or `Object.prototype`, from any realm). A class instance, `Map`, `Date` or array in a record slot is reported as `invalid`.
 - Only **own enumerable string-keyed properties** are read (or, with `fields`, the named own properties). Inherited properties, symbol keys and non-enumerable properties of a record are ignored. `toJSON`, `then`, `toString` and `valueOf` are never called.
-- **Options are not skipped quietly.** An option object is read the same way, except that anything it cannot read as written is refused: an unknown name, a symbol key, or a non-enumerable own property (for example `fields` defined with `enumerable: false`) throws `bad-options`. Skipping it would silently turn the check off.
+- **Options are not skipped quietly.** An option object is read the same way, except that anything it cannot read as written is refused: an unknown name, a symbol key, or a non-enumerable own property (for example `fields` defined with `enumerable: false`) throws `bad-options`. Skipping it would silently turn the check off. The same goes for arguments past the documented ones: `findHandTypedConstants` takes two, `compareMirror` and `auditReviewStamps` take three, and a call with more throws `bad-options` instead of dropping the extra one (an options bag handed to `findHandTypedConstants` would otherwise be ignored).
 - A **getter** is run once per read. A getter or Proxy trap that throws makes that record `invalid` with reason `unreadable`; the other records are still compared.
 - One object that appears twice in a record (the same object under two fields) is read once per appearance, so a getter on it runs once per appearance, and a getter whose result changes between calls can make the two appearances differ. Honest data has no such getter; this is a stated limit, because remembering every object would make shared structure expensive to compare.
 - An object property whose value is `undefined` is treated as absent, the way JSON treats it.
@@ -378,7 +378,7 @@ Everything wrong with **the whole call** throws `ParityError` (it has a `code`):
 
 | Code | When |
 | --- | --- |
-| `bad-options` | A misspelled or unknown option, a wrong type, a missing required option, an invalid `now` (including one outside the years 0001 to 9999). |
+| `bad-options` | A misspelled or unknown option, a wrong type, a missing required option, an invalid `now` (including one outside the years 0001 to 9999), an argument past the documented ones. |
 | `bad-input` | An argument that is not an array or plain object (`null`, a string, a `Map`), or text that is not a string. |
 | `unreadable-input` | Reading the argument itself threw (a revoked Proxy, a throwing `length`). |
 | `too-large` | A limit was passed. |

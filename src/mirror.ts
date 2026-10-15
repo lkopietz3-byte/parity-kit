@@ -8,6 +8,7 @@ import {
   optString,
   readOptions,
   readOwn,
+  refuseExtraArguments,
   type Budget,
 } from './options.js';
 import {
@@ -238,6 +239,8 @@ export function readTolerance(o: Record<string, unknown>, what: string): number 
  * a size limit. A single bad record is reported in `invalid`, not thrown.
  */
 export function compareMirror(canonical: unknown, mirror: unknown, options?: MirrorOptions): MirrorResult {
+  // The count of arguments given is the point, so this reads `arguments` rather than a rest parameter.
+  refuseExtraArguments(arguments.length, 3, WHAT);
   const o = readOptions(options, OPTION_NAMES, WHAT);
   const key = optString(o, 'key', WHAT) ?? 'id';
   const fields = optNames(o, 'fields', WHAT);
