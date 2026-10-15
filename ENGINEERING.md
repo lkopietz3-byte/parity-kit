@@ -92,9 +92,13 @@ imports a `node:` module, so it is browser-safe.
   calls `then`, which looks up `constructor`: it is called only when the
   object has no own `constructor` (or an own data one holding `undefined`) and
   its prototype is `null` or the untouched `Object.prototype`. Without
-  `Error.isError` (Node before 24), recognizing an Error uses the captured
-  `Object.prototype.toString`, which looks up `Symbol.toStringTag`: it is used
-  only with no own tag and a `null` or untouched `Object.prototype`. Anything
+  `Error.isError` (Node before 24), recognizing an Error uses Node's
+  `util.types.isNativeError` (a slot check, fetched once at load through
+  `process.getBuiltinModule`, not an import), so behavior matches Node 24. Only
+  where neither exists (Node before 20.16, or a non-Node runtime) does it fall
+  back to the captured `Object.prototype.toString`, which looks up
+  `Symbol.toStringTag`: that fallback is used only with no own tag and a `null`
+  or untouched `Object.prototype`. Anything
   else is `unsupported-value`, never plain data. A probe failure means "plain"
   only when the failure is the brand check itself.
 - **A selected hidden property is read, but never makes an object populated.** With

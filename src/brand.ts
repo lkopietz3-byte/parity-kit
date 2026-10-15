@@ -13,7 +13,9 @@
  * classified as an unsupported built-in, never as plain data:
  *   - recognizing a Promise calls `then`, which looks up `constructor`;
  *   - without `Error.isError` (Node before 24), recognizing an Error uses
- *     `Object.prototype.toString`, which looks up `Symbol.toStringTag`.
+ *     `util.types.isNativeError` where Node provides it (a slot check, no
+ *     lookups), and otherwise `Object.prototype.toString`, which looks up
+ *     `Symbol.toStringTag`.
  */
 import { isDataDescriptor } from './options.js';
 
@@ -63,6 +65,32 @@ add(method(globalProto('WeakRef'), 'deref'));
 add(method(globalProto('FinalizationRegistry'), 'unregister'), [sentinel]);
 const promiseThen = method(Promise.prototype, 'then');
 const errorIsError: unknown = Reflect.get(Error, 'isError');
+
+/**
+ * An Error brand check for runtimes without `Error.isError` (Node before 24). Node's
+ * `util.types.isNativeError` reads the internal slot only, so like `Error.isError` it
+ * ignores `Symbol.toStringTag`. It is looked up once, at load, through
+ * `process.getBuiltinModule` (Node 20.16 and later, 22.3 and later) instead of an
+ * import, so `src` still imports no `node:` module and still loads in a browser.
+ * `undefined` where neither is available.
+ */
+function nativeErrorCheck(): AnyFunction | undefined {
+  try {
+    const proc: unknown = Reflect.get(globalThis, 'process');
+    if (typeof proc !== 'object' || proc === null) return undefined;
+    const getBuiltinModule: unknown = Reflect.get(proc, 'getBuiltinModule');
+    if (typeof getBuiltinModule !== 'function') return undefined;
+    const util: unknown = Reflect.apply(getBuiltinModule as AnyFunction, proc, ['util']);
+    if (typeof util !== 'object' || util === null) return undefined;
+    const types: unknown = Reflect.get(util, 'types');
+    if (typeof types !== 'object' || types === null) return undefined;
+    const fn: unknown = Reflect.get(types, 'isNativeError');
+    return typeof fn === 'function' ? (fn as AnyFunction) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+const isNativeError = typeof errorIsError === 'function' ? undefined : nativeErrorCheck();
 // eslint-disable-next-line @typescript-eslint/unbound-method -- captured once; always called with a receiver
 const objectToString: (this: unknown) => string = Object.prototype.toString;
 const objectConstructor = Object;
@@ -141,8 +169,11 @@ export function nativeKind(object: object, proto: object | null, facts: ShapeFac
   try {
     if (typeof errorIsError === 'function') {
       if (Reflect.apply(errorIsError, Error, [object]) === true) return 'other';
+    } else if (isNativeError !== undefined) {
+      if (Reflect.apply(isNativeError, undefined, [object]) === true) return 'other';
     } else {
-      // Node before 24 has no Error.isError. Object.prototype.toString reports "Error" from
+      // Neither Error.isError nor util.types.isNativeError (Node before 20.16, or a
+      // non-Node runtime without Error.isError). Object.prototype.toString reports "Error" from
       // the internal slot, but it also reads Symbol.toStringTag, so only use it where that
       // lookup cannot find anything: no own tag, and a null or untouched Object.prototype.
       const hasOwnTag = facts.hasOwnTag ?? Reflect.getOwnPropertyDescriptor(object, Symbol.toStringTag) !== undefined;

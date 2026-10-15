@@ -197,6 +197,15 @@ describe('toJSON, then, and other protocol hooks are never called', () => {
     const fakeDate = { id: 'a', v: { [Symbol.toStringTag]: 'Date' } }
     expect(compareMirror([fakeDate], [{ id: 'a', v: new Date(0) }]).ok).toBe(false)
   })
+
+  it('a real Error is still unsupported when its toStringTag lies or throws', () => {
+    const lying = new Error('x')
+    Object.setPrototypeOf(lying, null)
+    Object.defineProperty(lying, Symbol.toStringTag, { get(): string { throw new Error('tag') } })
+    const r = compareMirror([{ id: 'a', v: lying }], [{ id: 'a', v: lying }])
+    expect(r.ok).toBe(false)
+    expect(r.invalid.map((i) => i.reason)).toEqual(['unsupported-value', 'unsupported-value'])
+  })
 })
 
 describe('cross-realm and exotic values', () => {
