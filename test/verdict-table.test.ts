@@ -7,7 +7,7 @@ import {
   type MirrorOptions,
   type StampOptions,
 } from '../src/index.js'
-import { program, programs, structuredCopy } from './helpers.js'
+import { cpuMs, program, programs, structuredCopy } from './helpers.js'
 
 // Verdict regression table. Honest inputs must pass; bad inputs must be
 // flagged with the named finding. Rows are never edited to get green.
@@ -3101,5 +3101,64 @@ describe('gate-false-pass:GFP-12 / gate-hostile:F8: a combining mark glues like 
     expect(zero('x = 0.000')).toEqual(['0.000'])
     expect(zero('x = 0e5')).toEqual(['0e5'])
     expect(zero('x = 0')).toEqual(['0'])
+  })
+})
+
+describe('gate-false-pass:GFP-02: a key is charged by what normalizing it costs, and a look-alike group echoes a short skeleton', () => {
+  const FDFA = 'ﷺ' // one UTF-16 unit, 18 code points under compatibility decomposition
+  const keysOf = (ch: string, count: number, units = 200, suffix = ''): Array<{ id: string; v: number }> =>
+    Array.from({ length: count }, (_, i) => ({ id: ch.repeat(units - 6) + String(100000 + i) + suffix, v: i }))
+  const tooLarge = expect.objectContaining({ name: 'ParityError', code: 'too-large' }) as Error
+
+  it('gate-false-pass:GFP-02: ASCII keys fit a budget that the same number of U+FDFA keys of the same length overruns', () => {
+    const limits = { maxNodes: 60_000 }
+    expect(compareMirror(keysOf('a', 100), keysOf('a', 100), { limits }).status).toBe('ok')
+    expect(() => compareMirror(keysOf(FDFA, 100), keysOf(FDFA, 100), { limits })).toThrowError(tooLarge)
+  })
+
+  it('gate-false-pass:GFP-02: the charge reaches id-keyed objects too', () => {
+    const asObject = (list: Array<{ id: string; v: number }>): Record<string, { v: number }> =>
+      Object.fromEntries(list.map((r) => [r.id, { v: r.v }]))
+    const limits = { maxNodes: 60_000 }
+    expect(compareMirror(asObject(keysOf('a', 100)), asObject(keysOf('a', 100)), { limits }).status).toBe('ok')
+    expect(() => compareMirror(asObject(keysOf(FDFA, 100)), asObject(keysOf(FDFA, 100)), { limits })).toThrowError(tooLarge)
+  })
+
+  it('gate-false-pass:GFP-02: a key that decomposes a little (Korean, accents) is charged a little more, not refused', () => {
+    const korean = Array.from({ length: 50 }, (_, i) => ({ id: `한국어-${i}`, v: i }))
+    expect(compareMirror(korean, korean.map((r) => ({ ...r }))).status).toBe('ok')
+    const accented = Array.from({ length: 50 }, (_, i) => ({ id: `café-${i}`, v: i }))
+    expect(compareMirror(accented, accented.map((r) => ({ ...r }))).status).toBe('ok')
+  })
+
+  it('gate-false-pass:GFP-02: the same node budget costs about the same CPU for ASCII and U+FDFA keys (30x before)', () => {
+    const limits = { maxNodes: 1_000_000 }
+    const cpu = (ch: string): number =>
+      cpuMs(() => {
+        try {
+          compareMirror(keysOf(ch, 300, 1000), keysOf(ch, 300, 1000), { limits })
+        } catch (error) {
+          if (!(error instanceof Error) || (error as { code?: string }).code !== 'too-large') throw error
+        }
+      }, 3)
+    const ascii = Math.max(cpu('a'), 5)
+    const expanded = cpu(FDFA)
+    expect(expanded).toBeLessThan(ascii * 8)
+  })
+
+  it('gate-false-pass:GFP-02: a look-alike group reports a clipped skeleton, so the report never grows past the input', () => {
+    const r = compareMirror(keysOf(FDFA, 20, 4000), keysOf(FDFA, 20, 4000, '​'))
+    expect(r.suspectKeys).toHaveLength(20)
+    for (const group of r.suspectKeys) expect(group.skeleton.length).toBeLessThan(100)
+    const echoed = r.suspectKeys.reduce((sum, g) => sum + g.skeleton.length, 0)
+    expect(echoed).toBeLessThan(40 * 100)
+  })
+
+  it('gate-false-pass:GFP-02: the clip says how long the skeleton was and keeps short skeletons whole', () => {
+    const short = compareMirror([{ id: 'saving  ...', v: 1 }], [{ id: 'saving ...', v: 1 }])
+    expect(short.suspectKeys.map((g) => g.skeleton)).toEqual(['saving ...'])
+    const long = compareMirror([{ id: 'a'.repeat(500), v: 1 }], [{ id: 'a'.repeat(500) + '​', v: 1 }])
+    expect(long.suspectKeys).toHaveLength(1)
+    expect(long.suspectKeys[0]?.skeleton).toMatch(/\.\.\. \(500 units\)$/)
   })
 })

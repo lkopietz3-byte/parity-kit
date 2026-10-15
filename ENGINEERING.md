@@ -117,7 +117,11 @@ imports a `node:` module, so it is browser-safe.
   `maxNodes` (and a lower cap on arrays and
   objects, which allocate) and `maxDepth` (at most 1000) bound every read.
   Recursion happens only after the depth check, so stack use is bounded.
-  Cycles are detected with an ancestor set.
+  Cycles are detected with an ancestor set. A string key that is analyzed is charged to
+  the node budget by the size of its compatibility decomposition when that
+  exceeds its length (a refused key costs nothing, and its scan stops at the
+  refusal), and `suspectKeys[].skeleton` is clipped, so key normalization and the
+  report are both bounded by the input (`gate-false-pass:GFP-02`).
 - **Linear scans.** Look-alike grouping is one pass over the keys. Text
   scanning is one pass for numbers plus an Aho-Corasick pass for literal
   forms. No regular expression retries over untrusted text; the only

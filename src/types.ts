@@ -55,7 +55,7 @@ export interface DuplicateKey {
  * They are listed, never merged.
  */
 export interface SuspectKeyGroup {
-  /** The shared normalized form the keys collapse to. */
+  /** The shared normalized form the keys collapse to, clipped to 40 UTF-16 units (the original length is appended to a clipped one). */
   skeleton: string;
   /** Keys, by dataset side name, in order of first appearance. */
   keys: Array<{ side: string; key: Key }>;

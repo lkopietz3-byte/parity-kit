@@ -1,3 +1,4 @@
+import { clip } from './text.js';
 import type { InvalidReason, Key, SuspectKeyGroup } from './types.js';
 
 /**
@@ -140,7 +141,8 @@ export function findSuspectKeys(
   }
   const out: SuspectKeyGroup[] = [];
   for (const group of groups.values()) {
-    if (group.seen.size > 1) out.push({ skeleton: group.skeleton, keys: group.keys });
+    // Grouping used the whole skeleton; the report carries a clipped copy so it never grows past the input.
+    if (group.seen.size > 1) out.push({ skeleton: clip(group.skeleton, SKELETON_ECHO), keys: group.keys });
   }
   return out;
 }
@@ -150,6 +152,19 @@ export const MAX_COMBINING_RUN = 32;
 
 const COMBINING = /^\p{M}$/u;
 
+/** What looking at one string key found, and what that cost in work units. */
+export interface KeyAnalysis {
+  problem: InvalidReason | undefined;
+  /**
+   * Work units for normalizing the key: one per UTF-16 unit, or one per code
+   * point of its compatibility decomposition when that is more (U+FDFA is one
+   * unit and eighteen code points). Charged to the node budget when the key is
+   * accepted, so the budget bounds the CPU a key costs and not just its length.
+   * For a refused key it is the work done up to the refusal, and is not charged.
+   */
+  cost: number;
+}
+
 /**
  * Can this string key be analyzed for look-alikes within a bound? A key longer
  * than `maxLength` UTF-16 units is `key-too-long`; a key with a run of more than
@@ -157,24 +172,33 @@ const COMBINING = /^\p{M}$/u;
  * a run, which takes quadratic time). The run is counted on the compatibility
  * decomposition of each character, because a character such as U+FF9E becomes a
  * combining mark under NFKC. Checked before any normalization, in one linear
- * pass (a decomposition is at most a few code points).
+ * pass (a decomposition is at most 18 code points). Also counts the expanded
+ * size of the key (see `KeyAnalysis.cost`), up to the point a problem was found.
  */
-export function keyProblem(key: string, maxLength: number): InvalidReason | undefined {
-  if (key.length > maxLength) return 'key-too-long';
+export function analyzeKey(key: string, maxLength: number): KeyAnalysis {
+  if (key.length > maxLength) return { problem: 'key-too-long', cost: 0 };
   let run = 0;
+  let cost = 0;
   for (const ch of key) {
     if ((ch.codePointAt(0) as number) < 0x80) {
       run = 0;
+      cost += 1;
       continue;
     }
+    let parts = 0;
     for (const part of ch.normalize('NFKD')) {
+      parts += 1;
       if (COMBINING.test(part)) {
         run += 1;
-        if (run > MAX_COMBINING_RUN) return 'key-unnormalizable';
+        if (run > MAX_COMBINING_RUN) return { problem: 'key-unnormalizable', cost: cost + parts };
       } else {
         run = 0;
       }
     }
+    cost += Math.max(ch.length, parts);
   }
-  return undefined;
+  return { problem: undefined, cost };
 }
+
+/** Longest skeleton echoed in `suspectKeys`; a longer one is clipped the way detail text is. */
+const SKELETON_ECHO = 40;

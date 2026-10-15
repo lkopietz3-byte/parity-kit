@@ -1,5 +1,6 @@
 import { isBufferView, nativeKind, type ShapeFacts } from './brand.js';
-import { keyProblem } from './keys.js';
+import { analyzeKey } from './keys.js';
+import { clip } from './text.js';
 import { ParityError, isOwnError, registerOwnError } from './errors.js';
 import { descriptorValue, isDataDescriptor, readOwn, type Budget } from './options.js';
 import type { InvalidReason, Key } from './types.js';
@@ -86,19 +87,6 @@ export function describeError(error: unknown): string {
     // fall through
   }
   return 'a value that could not be described was thrown';
-}
-
-/**
- * A name or value shortened for a message, so detail text never grows with
- * the input (a 5 MB id shared by many records would otherwise be copied into
- * every message). Cuts on a code point and says how long the original was.
- */
-export function clip(text: string, max = 40): string {
-  if (text.length <= max) return text;
-  let end = max;
-  const last = text.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
-  return `${text.slice(0, end)}... (${text.length} units)`;
 }
 
 interface Ctx {
@@ -436,9 +424,11 @@ function readRecord(
       keyValue = slotValue(raw, { name: cfg.key, desc: keyDesc });
       ctx.trail.pop();
     }
-    const problem = typeof keyValue === 'string' ? keyProblem(keyValue, ctx.budget.maxKeyLength) : undefined;
-    // A refused key is never normalized, so only a key that will be analyzed is charged.
-    if (typeof keyValue === 'string' && problem === undefined) spend(ctx.budget, keyValue.length);
+    const analysis = typeof keyValue === 'string' ? analyzeKey(keyValue, ctx.budget.maxKeyLength) : undefined;
+    const problem = analysis?.problem;
+    // A key that will be analyzed is charged for the work that takes (its expanded size). A refused key is not
+    // charged: it is refused whatever the budget says, and its scan stops at the refusal.
+    if (analysis !== undefined && analysis.problem === undefined) spend(ctx.budget, analysis.cost);
     if (mode === 'array' && problem === undefined && validKey(keyValue)) id = keyValue;
     if (Array.isArray(raw)) {
       // Judged after the key is read, so an array that carries a usable key keeps its identity.
@@ -583,7 +573,8 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     for (const { id, desc } of slots) {
       // The name is judged before its getter runs, so a refused or empty name
       // costs nothing and runs no user code.
-      const problem = keyProblem(id, budget.maxKeyLength);
+      const analysis = analyzeKey(id, budget.maxKeyLength);
+      const problem = analysis.problem;
       if (problem !== undefined) {
         invalid.push({ position: id, reason: problem, detail: `the key is ${problem === 'key-too-long' ? `longer than ${budget.maxKeyLength} units` : 'built from a run of more than 32 combining marks'}` });
         entries.push({ id: undefined, position: id, fields: undefined });
@@ -594,7 +585,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
         entries.push({ id: undefined, position: id, fields: undefined });
         continue;
       }
-      spend(budget, id.length);
+      spend(budget, analysis.cost);
       let raw: unknown;
       try {
         raw = descriptorValue(input, desc);
