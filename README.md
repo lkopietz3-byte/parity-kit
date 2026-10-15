@@ -335,7 +335,7 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 
 **Order.** A bare date is midnight UTC. Stamps are compared as instants to the millisecond (extra fraction digits are cut off). `2026-06-09` and `2026-06-09T01:00:00+01:00` are the same instant, so that is not a move. A format-only rewrite that keeps the calendar day is still a move of the instant: `2026-06-08` to `2026-06-08T09:00:00-05:00` (14:00 UTC) is a later stamp, so a record with nothing else changed is `stampOnly`, and `2026-06-08T12:00:00Z` to `2026-06-08` is earlier, so it is `backward`. To migrate the date format, rewrite both snapshots to the same form before you audit them.
 
-**Future.** Checked only when `now` is supplied. A timestamp with an explicit offset is future when it is later than `now`, with no tolerance. A bare date can be today in a zone up to 14 hours ahead of UTC, so it is future only when its start of day, minus 14 hours, is later than `now`. `now` must be a valid `Date` (any realm), epoch milliseconds, or an ISO timestamp with an explicit zone. A bare date or zoneless `now` throws.
+**Future.** Checked only when `now` is supplied. A timestamp with an explicit offset is future when it is later than `now`, with no tolerance. A bare date can be today in a zone up to 14 hours ahead of UTC, so it is future only when its start of day, minus 14 hours, is later than `now`. `now` must be a valid `Date` (any realm), epoch milliseconds, or an ISO timestamp with an explicit zone, and it must fall in the years 0001 to 9999, the years a stamp can have. A bare date, a zoneless `now`, or a number outside that range (epoch microseconds or nanoseconds from another tool, for example) throws, because a `now` after every possible stamp would turn the check off without a word. Epoch seconds is inside the range, so it is accepted and reads as January 1970: every stamp is then future.
 
 **Evidence of a recheck** is any change, between the two snapshots, in:
 
@@ -376,7 +376,7 @@ Everything wrong with **the whole call** throws `ParityError` (it has a `code`):
 
 | Code | When |
 | --- | --- |
-| `bad-options` | A misspelled or unknown option, a wrong type, a missing required option, an invalid `now`. |
+| `bad-options` | A misspelled or unknown option, a wrong type, a missing required option, an invalid `now` (including one outside the years 0001 to 9999). |
 | `bad-input` | An argument that is not an array or plain object (`null`, a string, a `Map`), or text that is not a string. |
 | `unreadable-input` | Reading the argument itself threw (a revoked Proxy, a throwing `length`). |
 | `too-large` | A limit was passed. |

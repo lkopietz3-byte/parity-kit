@@ -2920,3 +2920,41 @@ describe('gate-review:F3 / gate-review:F7 / gate-hostile:F5: the key column is n
     expect(r.status).toBe('ok')
   })
 })
+
+describe('gate-hostile:F1: now must fall in years 0001 to 9999, the years a stamp can have', () => {
+  const before = [{ id: 'a', price: 1, lastReviewed: '2026-01-01' }]
+  const after = [{ id: 'a', price: 2, lastReviewed: '2999-12-31' }]
+  const run = (now: unknown) => auditReviewStamps(before, after, { reviewedField: 'lastReviewed', sourceFields: [], now: now as number })
+  const LAST_MS = 253402300799999 // 9999-12-31T23:59:59.999Z
+  const FIRST_MS = -62135596800000 // 0001-01-01T00:00:00.000Z
+
+  it('gate-hostile:F1: a real now flags the far-future stamp (control)', () => {
+    const r = run(Date.UTC(2026, 9, 14))
+    expect(r.status).toBe('flagged')
+    expect(r.future.map((f) => f.id)).toEqual(['a'])
+  })
+
+  it.each([
+    ['microseconds', Date.UTC(2026, 9, 14) * 1000],
+    ['nanoseconds', Date.UTC(2026, 9, 14) * 1e6],
+    ['1e300', 1e300],
+    ['one past the Date range', 8.64e15 + 1],
+    ['one past the Date range, negative', -(8.64e15 + 1)],
+    ['one millisecond past the year 9999', LAST_MS + 1],
+    ['one millisecond before the year 1', FIRST_MS - 1],
+    ['a valid Date in the year 10000', new Date(LAST_MS + 1)],
+  ])('gate-hostile:F1: now in %s throws bad-options instead of turning the future check off', (_name, now) => {
+    expect(() => run(now)).toThrowError(expect.objectContaining({ code: 'bad-options' }) as Error)
+  })
+
+  it('gate-hostile:F1: the edges of that range are accepted', () => {
+    expect(() => run(LAST_MS)).not.toThrow()
+    expect(() => run(FIRST_MS)).not.toThrow()
+    expect(run(LAST_MS).future).toEqual([])
+    expect(() => run(new Date(LAST_MS))).not.toThrow()
+  })
+
+  it('gate-hostile:F1: epoch seconds is still accepted as a number (it reads as 1970, and every stamp is then future)', () => {
+    expect(run(1.78e9).future.map((f) => f.id)).toEqual(['a'])
+  })
+})

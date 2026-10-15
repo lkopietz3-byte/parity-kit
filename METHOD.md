@@ -79,7 +79,7 @@ copies" look the same as "the registry file failed to load".
 | `numberTolerance` | `0` (exact) | Any tolerance waives real changes. | Pass a number. It is one absolute number for every compared field, so use one call per scale. |
 | `foldCase` | `true` | Keys that differ only by case are usually the same key, typed twice. | `foldCase: false` for key sets where case carries meaning, such as HTML entity names. |
 | `allowEmpty` | `false` | An empty file loaded by mistake would otherwise pass. | `allowEmpty: true`. |
-| `now` | none | The kit never reads the clock. | Pass a `Date`, epoch milliseconds or an ISO timestamp with a zone. |
+| `now` | none | The kit never reads the clock. | Pass a `Date`, epoch milliseconds or an ISO timestamp with a zone, in the years 0001 to 9999. A number outside that range (epoch microseconds or nanoseconds) throws instead of turning the future check off. |
 | `bulkThreshold` | `10` | The owner's choice. More than ten records moving to one new day is the point where a person should look. It is not derived from data. | Pass `bulkThreshold`. Lower it if your bumps are smaller. |
 | Reviewer name changes count as evidence | on, when `reviewerField` is set | The owner's choice. A reviewer name in the data is the only mark of who looked. The kit cannot tell that nobody did. | Leave `reviewerField` unset to stop counting it. |
 | Bare date | Midnight UTC | A date with no time needs one fixed reading. | Write a full timestamp with an offset. |

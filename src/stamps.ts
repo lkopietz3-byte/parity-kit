@@ -30,7 +30,7 @@ export interface StampOptions {
   valueFields?: readonly string[];
   /** Fields that never count as evidence (for example an automatic `updatedAt`). */
   ignoreFields?: readonly string[];
-  /** The current time. Future-dated stamps are only checked when this is supplied. A Date, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone. */
+  /** The current time. Future-dated stamps are only checked when this is supplied. A Date, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone, in the years 0001 to 9999 (a number outside that range, such as epoch microseconds, throws `bad-options`). */
   now?: Date | number | string;
   /** Flag a bulk bump when MORE than this many records moved to the same new date in one change. Default 10. */
   bulkThreshold?: number;
@@ -150,19 +150,25 @@ const OPTION_NAMES = [
 ];
 const DEFAULT_BULK_THRESHOLD = 10;
 
+/** 0001-01-01T00:00:00.000Z and 9999-12-31T23:59:59.999Z: the years a stamp can have, so the years `now` can have. */
+const NOW_MIN_MS = -62135596800000;
+const NOW_MAX_MS = 253402300799999;
+
 function readNow(value: unknown): number | undefined {
   if (value === undefined) return undefined;
   const bad = (): never => {
-    throw new ParityError('bad-options', `${WHAT}: option "now" must be a valid Date, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone`);
+    throw new ParityError('bad-options', `${WHAT}: option "now" must be a valid Date, epoch milliseconds, or an ISO 8601 timestamp with an explicit zone, in the years 0001 to 9999 (microseconds or nanoseconds are not milliseconds)`);
   };
-  if (typeof value === 'number') return Number.isFinite(value) ? value : bad();
+  // A `now` after every date a stamp can hold would make the future check silently never fire.
+  const inRange = (ms: number): number => (ms >= NOW_MIN_MS && ms <= NOW_MAX_MS ? ms : bad());
+  if (typeof value === 'number') return Number.isFinite(value) ? inRange(value) : bad();
   if (typeof value === 'string') {
     const parsed = parseStamp(value);
-    return parsed.ok && !parsed.dateOnly ? parsed.ms : bad();
+    return parsed.ok && !parsed.dateOnly ? inRange(parsed.ms) : bad();
   }
   if (typeof value === 'object' && value !== null) {
     const time = dateTime(value);
-    return time !== undefined && Number.isFinite(time) ? time : bad();
+    return time !== undefined && Number.isFinite(time) ? inRange(time) : bad();
   }
   return bad();
 }
