@@ -37,7 +37,17 @@ whose version matches `package.json`; `.github/workflows/release.yml` then runs
 the checks and publishes with npm trusted publishing. Never run `npm publish`
 by hand, and do not push tags without the owner's decision. Before tagging,
 update `CHANGELOG.md` and run `npm run verify`, `npm run attw` and
-`npm pack --dry-run`.
+`npm pack --dry-run`. The release job also requires a successful `Verify` workflow
+run on the tagged commit (so tag a commit that went through the pull request or
+`main` checks), runs the checks once, and publishes with `--ignore-scripts` so the
+test suite does not run a second time.
+
+The name `parity-kit` is unclaimed on npm, so the first publish through trusted
+publishing needs a pending trusted publisher: on npmjs.com add one for the package
+`parity-kit`, the repository `lkopietz3-byte/parity-kit` and the workflow file
+`release.yml`, shortly before pushing the first tag (an unused setting expires). The
+README links to `bench/` files under `blob/main`, which resolve once the release
+branch is merged to `main`.
 
 Security problems go through GitHub private vulnerability reporting, not a
 public issue (see `SECURITY.md`).
