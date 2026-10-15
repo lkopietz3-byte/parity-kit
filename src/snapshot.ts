@@ -609,7 +609,7 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     if (isOwnError(error) && error instanceof BudgetExceeded) {
       throw new ParityError('too-large', error.message === 'container limit'
         ? `${side}: arrays and objects passed the limit of ${budget.maxContainers} (a fifth of limits.maxNodes, never below 1000); raise limits.maxNodes if this data is expected`
-        : `${side}: the total number of values read passed limits.maxNodes (${budget.maxNodes}); every value in both datasets counts, about 14 per three-field record per side, so raise limits.maxNodes if this data is expected`);
+        : `${side}: the total number of values read passed limits.maxNodes (${budget.maxNodes}); every value in both datasets counts, about 17 per record per side with a short id and three more fields, so raise limits.maxNodes if this data is expected`);
     }
     throw new ParityError('unreadable-input', `${side}: reading the input threw: ${describeError(error)}`);
   }

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import {
@@ -3326,5 +3328,165 @@ describe('gate-hostile:F7: arguments past the documented ones are refused, not i
 
   it('gate-hostile:F7: a function passed straight to Array.map is refused, never run with the index as its options', () => {
     expect(() => [[{ id: 'a' }]].map(loose(compareMirror).bind(null, [{ id: 'a' }]))).toThrowError(refused)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Documentation findings: the text must say what the code does
+// ---------------------------------------------------------------------------
+
+describe('gate documentation findings: README, METHOD, CHANGELOG and ENGINEERING say what the code does', () => {
+  const doc = (name: string): string => readFileSync(join(import.meta.dirname, '..', name), 'utf8')
+  const readme = doc('README.md')
+  const method = doc('METHOD.md')
+  const changelog = doc('CHANGELOG.md')
+  const engineering = doc('ENGINEERING.md')
+
+  it('gate-false-pass:GFP-01: METHOD.md says how a reviewer-name change really stops counting, and the code agrees', () => {
+    expect(method).not.toMatch(/Leave `reviewerField` unset to stop counting it/)
+    const row = method.split('\n').find((line) => line.startsWith('| Reviewer name changes count as evidence')) ?? ''
+    expect(row).toContain('`ignoreFields`')
+    expect(row).toContain('`valueFields`')
+    const before = [{ id: 'a', lastReviewed: '2026-01-01', price: 5, source: 'u', reviewer: 'ann' }]
+    const after = [{ id: 'a', lastReviewed: '2026-10-01', price: 5, source: 'u', reviewer: 'bob' }]
+    const base = { reviewedField: 'lastReviewed', sourceFields: ['source'] }
+    // Leaving reviewerField unset does not stop the name counting: it is a value field like any other.
+    expect(auditReviewStamps(before, after, base).stampOnly).toEqual([])
+    // What the row says to do does.
+    expect(auditReviewStamps(before, after, { ...base, ignoreFields: ['reviewer'] }).stampOnly).toHaveLength(1)
+    expect(auditReviewStamps(before, after, { ...base, valueFields: ['price'] }).stampOnly).toHaveLength(1)
+  })
+
+  it('gate-false-pass:GFP-03: the README says which bench command prints which totals', () => {
+    expect(readme).toContain('node bench/fetch/fetch.mjs')
+    expect(readme).toContain('--tier all')
+    expect(readme).toMatch(/npm run bench[^\n]*vendored/)
+    expect(method).toContain('--tier all')
+    expect(changelog).toContain('--tier all')
+  })
+
+  it('gate-review:F10: the maxNodes estimate matches what a three-field record costs', () => {
+    const rows = (count: number): Array<{ id: string; name: string; price: number; lastReviewed: string }> =>
+      Array.from({ length: count }, (_, i) => ({ id: `rec-${i}`, name: `Name ${i}`, price: i, lastReviewed: '2026-01-01' }))
+    const needed = (count: number): number => {
+      let lo = 1
+      let hi = 5_000_000
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        try {
+          compareMirror(rows(count), rows(count), { limits: { maxNodes: mid } })
+          hi = mid
+        } catch {
+          lo = mid + 1
+        }
+      }
+      return lo
+    }
+    const perRecordPerSide = needed(2000) / 2000 / 2
+    expect(perRecordPerSide).toBeGreaterThan(16)
+    expect(perRecordPerSide).toBeLessThan(19)
+    for (const text of [readme, method]) {
+      expect(text).not.toContain('350,000')
+      expect(text).not.toMatch(/about 14 on each/)
+    }
+    expect(readme).toContain('290,000')
+    expect(readFileSync(join(import.meta.dirname, '..', 'src', 'snapshot.ts'), 'utf8')).not.toContain('about 14 per')
+  })
+
+  it('gate-review:F9: the CHANGELOG names noFieldsCompared', () => {
+    expect(changelog).toContain('noFieldsCompared')
+  })
+
+  it('gate-review:F6: the docs say the surplus of absent ids may include the unreadable record', () => {
+    expect(method).not.toContain('A record is never called missing because it could not be read.')
+    expect(method).toMatch(/unreadable record/)
+    const r = compareMirror([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [{ id: 'a' }, { get id(): string { throw new Error('x') } }])
+    // Both b and c are listed although one of them may be the unreadable record, and the result is flagged.
+    expect(r.missing).toEqual(['b', 'c'])
+    expect(r.status).toBe('flagged')
+    expect(readme).toMatch(/at most as many of them as there are unreadable records/)
+    expect(engineering).toMatch(/at most as many/)
+  })
+
+  it('gate-review:F4: the README says an ignored name is read, with fields and valueFields too', () => {
+    expect(readme).toMatch(/A name in `ignoreFields` is read like any other selected name/)
+    const getter = { id: 'a', v: 1 }
+    let runs = 0
+    Object.defineProperty(getter, 'cache', { enumerable: true, get: () => ((runs += 1), 1) })
+    compareMirror([getter], [{ id: 'a', v: 1, cache: 1 }], { fields: ['v'], ignoreFields: ['cache'] })
+    expect(runs).toBe(1)
+  })
+
+  it('gate-false-pass:GFP-06: the README names the host objects that read as an empty plain object', () => {
+    expect(readme).toMatch(/`URL`, `URLSearchParams`, `Blob`/)
+    const UrlCtor = (globalThis as unknown as { URL: new (url: string) => object }).URL
+    const disguised = Object.setPrototypeOf(new UrlCtor('https://example.test/'), null) as object
+    expect(compareMirror([{ id: 'a', v: disguised }], [{ id: 'a', v: {} }]).status).toBe('ok')
+  })
+
+  it('gate-false-pass:GFP-07: the README names null as well as false for "no deadline"', () => {
+    expect(readme).toMatch(/writes `false` or `null` for "no deadline"/)
+    const r = auditReviewStamps(
+      [{ id: 'a', v: 1, lastReviewed: '2026-01-01', expires: null }],
+      [{ id: 'a', v: 1, lastReviewed: '2026-01-01', expires: null }],
+      { reviewedField: 'lastReviewed', sourceFields: [], expiryField: 'expires' },
+    )
+    expect(r.status).toBe('unknown')
+    expect(r.unknown.map((u) => u.reason)).toEqual(['missing'])
+  })
+
+  it('gate-false-pass:GFP-09: the translation-files recipe says it is for flat placeholders', () => {
+    expect(readme).toMatch(/flat placeholders/)
+    const tokens = (text: string): string => (text.match(/\{[^}]*\}|<\/?\w+>/g) ?? []).sort().join(' ')
+    expect(tokens('{count, plural, one {# file} other {# files}}')).not.toBe(tokens('{count, plural, one {# fichier} other {# fichiers}}'))
+  })
+
+  it('gate-false-pass:GFP-11: the README describes the same instant written two ways as it behaves', () => {
+    const a = [{ id: 'a', v: 1, reviewed: '2026-06-09' }]
+    const b = [{ id: 'a', v: 2, reviewed: '2026-06-09T00:00:00Z' }]
+    const r = compareMirror(a, b, { reviewedField: 'reviewed' })
+    expect(r.changed.map((c) => c.field)).toEqual(['reviewed', 'v'])
+    expect(r.stampHidesDrift.map((h) => h.fields)).toEqual([['v']])
+    expect(readme).toMatch(/shows up in `changed` as well as in `stampHidesDrift`/)
+  })
+
+  it('gate-false-pass:GFP-13 / gate-hostile:F6: the README says an option set to undefined is treated as omitted, and what that costs', () => {
+    expect(readme).toMatch(/An option that is present with the value `undefined` is treated as omitted/)
+    expect(readme).toContain('exactOptionalPropertyTypes')
+    const before = [{ id: 'a', v: 1, lastReviewed: '2026-01-01', updatedAt: '2026-01-01' }]
+    const after = [{ id: 'a', v: 1, lastReviewed: '2026-10-01', updatedAt: '2026-10-01' }]
+    const stamp = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+    expect(auditReviewStamps(before, after, { ...stamp, ignoreFields: ['updatedAt'] }).status).toBe('flagged')
+    expect(auditReviewStamps(before, after, { ...stamp, ignoreFields: undefined } as unknown as StampOptions).status).toBe('ok')
+  })
+
+  it('gate-false-pass:GFP-14: the README has a recipe for scalar maps, string lists and composite keys', () => {
+    expect(readme).toContain('### Data that is not a list of records yet')
+  })
+
+  it('gate-hostile:F9: the README says one options object should not be shared by datasets with different fields', () => {
+    expect(readme).toMatch(/Do not share one `ignoreFields` list/)
+    const shared = { reviewedField: 'lastReviewed', sourceFields: [] as string[], ignoreFields: ['updatedAt', 'etag'] }
+    const r = auditReviewStamps(
+      [{ id: 'a', v: 1, lastReviewed: '2026-01-01' }],
+      [{ id: 'a', v: 2, lastReviewed: '2026-10-01' }],
+      shared,
+    )
+    expect(r.status).toBe('unknown')
+    expect(r.unknownFields).toEqual(['updatedAt', 'etag'])
+  })
+
+  it('gate-hostile:F11: the README says shared structure is read once per appearance and what a small maxNodes does for untrusted input', () => {
+    expect(readme).toMatch(/lower `limits.maxNodes` for untrusted input/)
+    expect(engineering).toContain('stated limit')
+  })
+
+  it('gate-review:F11: the release workflow runs the checks once, without an npm cache, and needs a green verify run', () => {
+    const release = doc('.github/workflows/release.yml')
+    expect(release).not.toMatch(/cache: npm/)
+    expect(release).toMatch(/npm publish[^\n]*--ignore-scripts/)
+    expect(release).toMatch(/actions: read/)
+    expect(release).toMatch(/verify\.yml/)
+    expect(engineering + doc('CONTRIBUTING.md')).toMatch(/pending trusted publisher/)
   })
 })

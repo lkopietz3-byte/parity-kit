@@ -46,7 +46,7 @@ freshness-kit (a sibling kit) scores how old a review date is. This kit asks a d
 
 ## Accuracy on real data
 
-The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be. The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. You can re-run them with `npm run bench` in a checkout of the repository.
+The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be. The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. In a checkout of the repository, `npm run bench` re-runs the vendored tier: 45,205 items that should flag and 3,156,270 that should pass, with 0 false passes and 0 false flags. It does not include the row marked fetched, so it does not print the 121,642 and 3,287,820 totals below. Those need `node bench/fetch/fetch.mjs <dir>` (network access; it downloads two AGPL-3.0 sources that are not copied into the repository) and then `node bench/run.mjs --tier all --cache <dir> --check`; see [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md).
 
 | Corpus | An item is | Should flag | Missed (false pass) | Should pass | Flagged anyway (false flag) |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -176,7 +176,7 @@ const audit = auditReviewStamps(oldSnapshot, newSnapshot, {
 // audit.stampOnly, audit.bulkBump, audit.future, audit.backward, audit.unknown, ...
 ```
 
-If a field changes by itself whenever a record is touched (`updatedAt`, a version counter), list it in `ignoreFields`. Otherwise it counts as evidence of a recheck and hides a stamp-only bump. A name in `ignoreFields` that matches no record is reported in `unknownFields` and the audit is `unknown`, so a typo cannot quietly turn the exclusion off.
+If a field changes by itself whenever a record is touched (`updatedAt`, a version counter), list it in `ignoreFields`. Otherwise it counts as evidence of a recheck and hides a stamp-only bump. A name in `ignoreFields` that matches no record is reported in `unknownFields` and the audit is `unknown`, so a typo cannot quietly turn the exclusion off. Do not share one `ignoreFields` list between datasets that carry different fields: a name one of them lacks is reported for that dataset and its audit is `unknown`, because the kit cannot tell a typo from a field a dataset legitimately lacks. Give each dataset the list that fits it.
 
 ## The exports
 
@@ -268,12 +268,13 @@ Returns `ok`, `status`, `compared`, and:
 - A **getter** is run once per read. A getter or Proxy trap that throws makes that record `invalid` with reason `unreadable`; the other records are still compared.
 - One object that appears twice in a record (the same object under two fields) is read once per appearance, so a getter on it runs once per appearance, and a getter whose result changes between calls can make the two appearances differ. Honest data has no such getter; this is a stated limit, because remembering every object would make shared structure expensive to compare.
 - An object property whose value is `undefined` is treated as absent, the way JSON treats it.
+- **An option that is present with the value `undefined` is treated as omitted.** The same rule applies to an options object, so `{ ignoreFields: cfg.ignoreFeilds }` or `{ now: cfg.nw }`, where the lookup misses, drops the option without a word, unlike a misspelled option name, which throws. Check config values before you pass them, or leave an absent option out of the object (`...(cfg.now === undefined ? {} : { now: cfg.now })`). The required audit options (`reviewedField`, `sourceFields`) do throw on `undefined`. The option types are declared without `| undefined`, so under `exactOptionalPropertyTypes` TypeScript refuses an explicit `undefined` for the optional ones, which is the safer reading.
 - Named properties on an array are ignored: a value array `[1]` carrying an extra `x` property equals `[1]`, and a dataset array is read by its index slots only. The key field is looked up by name, so a record whose `id` is non-enumerable is still identified by it, while its other non-enumerable properties are not read.
 - Values may be strings, finite or non-finite numbers, booleans, bigints, `null`, `Date`s, arrays and plain objects, nested. A function, symbol, class instance, `Map`, typed array or other exotic object inside a record makes the record `invalid` with reason `unsupported-value`. A cycle is `cycle`. Nesting deeper than `maxDepth` is `too-deep`.
 - A `Date` is recognized by its internal slot, so a `Date` from another realm works and an object that merely has a `getTime` method does not.
-- An object with **at least one own enumerable property** is plain data, if its prototype is plain. An object with **no own enumerable property** is checked for being a built-in whose prototype was replaced with `null` or `Object.prototype`. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` found that way is `unsupported-value`, and a Date found that way is a Date. The check calls a captured built-in method that only succeeds on a real instance; it never reads `Symbol.toStringTag`, `constructor` or the prototype, copies nothing, and costs about 0.2 ms of CPU per empty-looking object such as `{}` (measured at 170 to 250 µs on a heavily loaded machine; no quiet-machine figure has been verified). The cost is linear in the number of such objects, so 100,000 records with an empty `tags: {}` or `meta: {}` column on each side cost roughly 20 to 50 seconds of CPU, and a populated object, `[]`, `null` or `''` costs nothing extra. If a column like that is not what you are checking, select the columns you do check with `fields`: unselected values are never read, and the probe is skipped (5,000 records took 2.1 s with the empty column read and 0.1 s with `fields: ['name']`). `ignoreFields` does not help, because an ignored field is still read. An empty object whose prototype is neither `null` nor this realm's untouched `Object.prototype` cannot be ruled out, so it is also `unsupported-value`; that includes an empty object from another realm, while an object with properties from another realm is fine.
+- An object with **at least one own enumerable property** is plain data, if its prototype is plain. An object with **no own enumerable property** is checked for being a built-in whose prototype was replaced with `null` or `Object.prototype`. A `Map`, `Set`, `RegExp`, `ArrayBuffer`, typed array, `Promise`, `WeakMap`, boxed primitive or `Error` found that way is `unsupported-value`, and a Date found that way is a Date. The check calls a captured built-in method that only succeeds on a real instance; it never reads `Symbol.toStringTag`, `constructor` or the prototype, copies nothing, and costs about 0.2 ms of CPU per empty-looking object such as `{}` (measured at 170 to 250 µs on a heavily loaded machine; no quiet-machine figure has been verified). The cost is linear in the number of such objects, so 100,000 records with an empty `tags: {}` or `meta: {}` column on each side cost roughly 20 to 50 seconds of CPU, and a populated object, `[]`, `null` or `''` costs nothing extra. If a column like that is not what you are checking, select the columns you do check with `fields`: unselected values are never read, and the probe is skipped (5,000 records took 2.1 s with the empty column read and 0.1 s with `fields: ['name']`). `ignoreFields` does not help, because an ignored field is still read. That holds with `fields` and with the audit's `valueFields` too. A name in `ignoreFields` is read like any other selected name (an own getter on it runs once, and an unsupported value in it makes the record `invalid`), so that a misspelled name can be reported in `unknownFields`. Only names in neither list are left unread. An empty object whose prototype is neither `null` nor this realm's untouched `Object.prototype` cannot be ruled out, so it is also `unsupported-value`; that includes an empty object from another realm, while an object with properties from another realm is fine.
 - A property you name in `fields` is read even when it is not enumerable, but only an enumerable one makes an object count as populated. A `Map` with its prototype replaced by `null` and a hidden own `v` is therefore still `not-a-plain-object` when `fields: ['v']` selects it.
-- **The remaining exotic-object gap.** Proxies are read through their traps, and host objects or built-ins disguised with a replaced prototype **and** their own enumerable properties are read as plain data. This is a documented limit, not a promised check.
+- **The remaining exotic-object gap.** Proxies are read through their traps, and host objects or built-ins disguised with a replaced prototype **and** their own enumerable properties are read as plain data. This is a documented limit, not a promised check. The probe for an empty-looking object covers the built-ins listed above and nothing else: with a replaced prototype and no own enumerable property, `URL`, `URLSearchParams`, `Blob`, `Headers`, `EventTarget`, `Intl.NumberFormat`, `AbortController`, `TextEncoder`, generator objects and `Map` iterators are also read as the empty plain object `{}`. That takes a deliberate prototype swap on a host object, so it is a hostile-input case; the same object with its prototype intact is `unsupported-value`.
 - Reading a value never runs a getter on a prototype and never reads a property to classify it. Nothing is copied or cloned to classify it either, so classifying an object cannot run an excluded getter, cannot rewrite another record, and costs no memory proportional to its contents. Every property that is read is read once: the key, each selected field and the reviewed field are each looked up a single time, and the value used is the one from that lookup. The only caller code that can run is an own getter on a property being read (once), a Proxy trap, and, for a real `Promise`, the `constructor` lookup that `then` performs.
 - A Promise is recognized by calling `then`, which then looks up `constructor`. `then` is only called when that lookup cannot run caller code: the object has no own `constructor` (or an own data one holding `undefined`) and its prototype is `null` or the untouched `Object.prototype`. Otherwise the object is `unsupported-value`, never plain data. On Node before 24, which has no `Error.isError`, an Error is recognized through `Object.prototype.toString`, used only under the same kind of precondition (no own `Symbol.toStringTag`, a `null` or untouched `Object.prototype`); otherwise the object is `unsupported-value`. If your Proxy has a `get` trap, that fallback path can run it.
 - A key field is left out of the compared fields unless you ask for it: name it in `fields`, or use it as `reviewedField`. Then it is read like any other field, though it never counts as a comparison (see `noFieldsCompared`). In an object keyed by id the key field's name always counts as present, because the property name is the id: `fields: ['id']` there selects nothing and the result is `ok` (a presence check), so name the fields you want compared.
@@ -299,12 +300,12 @@ Returns `ok`, `status`, `compared`, and:
 - A renamed NFD key therefore shows up three ways: `missing`, `extra` and `suspectKeys`.
 - A key used twice on one side is a `duplicateKey`. That id is not compared field by field, but it still counts as present, so it is never reported as missing.
 - A record that cannot be read but whose key can be read still counts as present. It is never reported as missing.
-- A record whose **key** cannot be read (a getter or Proxy trap on the key field threw) has no identity, so it is `invalid` with reason `unreadable`. It might be any record the other side lacks, so those ids are not claimed as `missing` or `extra` while unreadable records could account for all of them: `[{ id: 'a' }]` against a mirror whose only record has a throwing `id` getter is `unknown`, not `missing: ['a']`. When more ids are absent than there are unreadable records, the surplus is real evidence and they are all listed.
+- A record whose **key** cannot be read (a getter or Proxy trap on the key field threw) has no identity, so it is `invalid` with reason `unreadable`. It might be any record the other side lacks, so those ids are not claimed as `missing` or `extra` while unreadable records could account for all of them: `[{ id: 'a' }]` against a mirror whose only record has a throwing `id` getter is `unknown`, not `missing: ['a']`. When more ids are absent than there are unreadable records, the surplus is real evidence and they are all listed. The list then names every absent id, and at most as many of them as there are unreadable records may really be present (as the unreadable record itself): with `[a, b, c]` against `[a, <unreadable>]`, `b` and `c` are both listed and one of them may be the unreadable record. The result is `flagged` either way, because at least one of them is missing.
 - In an object-keyed dataset, a record that also carries the key field must agree with its property name, otherwise it is `key-mismatch`. If your records carry an unrelated field that happens to be called `id` (a numeric database id), pass `key` naming a field they do not have, for example `key: 'recordKey'`; the real `id` field is then compared like any other field. The `key-mismatch` detail names the `key` option for this reason.
 
 ### `stampHidesDrift`
 
-Needs `reviewedField`. It is reported for a record when other compared fields differ and both copies carry a present, equal review value. Two strings that parse as the same ISO 8601 instant count as equal. If the review values differ, the review field itself shows up in `changed` and `stampHidesDrift` stays empty, because the stamps are not hiding anything.
+Needs `reviewedField`. It is reported for a record when other compared fields differ and both copies carry a present, equal review value. Two strings that parse as the same ISO 8601 instant count as equal for this rule, so `2026-06-09` and `2026-06-09T00:00:00Z` hide drift in the other fields. The review field itself is still compared as a string, so in that case it shows up in `changed` as well as in `stampHidesDrift`, which names the other fields. If the review values name different instants, the review field shows up in `changed` and `stampHidesDrift` stays empty, because the stamps are not hiding anything.
 
 ### Hand-typed constants
 
@@ -347,7 +348,7 @@ Needs `reviewedField`. It is reported for a record when other compared fields di
 
 A field added or removed counts as a change. The expiry field is not evidence: moving a deadline is not a recheck.
 
-**Expiry values.** When `expiryField` is set, every expiry value that is present in `after` must be a usable date (same rules as above), whether or not it moved. A garbage, numeric, zoneless, empty or **boolean** one is `unknown` (reasons `unparseable-date`, `not-a-string`, `zoneless-timestamp`, `missing`), even when it is unchanged. A record with no expiry field at all is not reported. A data source that writes `false` for "no deadline" will produce one `unknown` entry per such record: drop or replace those values before the audit (for example `eol: r.eol === false ? undefined : r.eol`), or read `unknownSummary` for the counts.
+**Expiry values.** When `expiryField` is set, every expiry value that is present in `after` must be a usable date (same rules as above), whether or not it moved. A garbage, numeric, zoneless, empty or **boolean** one is `unknown` (reasons `unparseable-date`, `not-a-string`, `zoneless-timestamp`, `missing`), even when it is unchanged. A record with no expiry field at all is not reported. A data source that writes `false` or `null` for "no deadline" will produce one `unknown` entry per such record (reason `not-a-string` for `false`, `missing` for `null`): drop or replace those values before the audit (for example `eol: r.eol === false || r.eol === null ? undefined : r.eol`), or read `unknownSummary` for the counts. An `expiryField` that no record carries at all is reported in `unknownFields`.
 
 **Records with no stamp.** A record whose `reviewedField` is absent in `after` is `unknown` with reason `missing`, once per record. That is the honest answer (nothing can be judged for it) and it keeps `ok` false. If a data source stamps only some records, audit only those, or read `unknownSummary` (`{ field, reason, count }`) instead of the full list.
 
@@ -393,11 +394,11 @@ Limits (`limits: { maxRecords, maxNodes, maxDepth, maxKeyLength }`):
 | Limit | Default | Meaning |
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. For an id-keyed object only own enumerable string keys are records; a non-enumerable or symbol-keyed property is not counted. Usually the node budget below ends a large dataset first. |
-| `maxNodes` | 10,000,000 | Most values read in one call, across both datasets, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this, and never below 1,000. A three-field record costs about 14 on each side, so the default ends a pair of ordinary datasets near 350,000 records, well before `maxRecords`; raise `maxNodes` for bigger data (the error message says so). |
+| `maxNodes` | 10,000,000 | Most values read in one call, across both datasets, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this, and never below 1,000. A record with an id of about nine characters costs about 13 on each side with one more field, and 2 more for each further field: 17 with three fields, so the default ends a pair of ordinary datasets near 290,000 records (370,000 with one field), well before `maxRecords`. Measured on records shaped like the worked example; a longer id costs more. Raise `maxNodes` for bigger data (the error message says so). |
 | `maxKeyLength` | 4,096 (at most 1,048,576) | Longest string key, in UTF-16 units. A longer key, or a key with a run of more than 32 combining marks, counted after compatibility decomposition (Unicode normalization is quadratic in such a run), makes its record `invalid` with `key-too-long` or `key-unnormalizable`; it is never analyzed for look-alikes. Key lengths count against `maxNodes`: a key counts by its UTF-16 length, or by the size of its compatibility decomposition when that is larger (U+FDFA is one unit and eighteen code points), so the budget bounds the CPU a key costs and not only its length. In an id-keyed object the name is checked before its getter runs. |
 | `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
-Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. Comparison itself never recurses deeper than `maxDepth`.
+Reading is iterative over records and bounded by these limits, so a 100,000-level nested value or a value that shares sub-objects to blow up exponentially ends in `too-deep` or `too-large`, not a stack overflow or a hang. The bound is a count, not a time: a value that shares sub-objects is read once per appearance, so about a kilobyte of aliased input can read two million containers before `too-large` ends it (2 to 5 seconds of CPU, measured on a heavily loaded machine). Pass a lower `limits.maxNodes` for untrusted input; the cap on arrays and objects is a fifth of it. Comparison itself never recurses deeper than `maxDepth`.
 
 ## What it does not do
 
@@ -422,12 +423,12 @@ const canonical = JSON.parse(readFileSync('data/programs.json', 'utf8'));
 const mirror = JSON.parse(readFileSync('extension/lib/valuations.json', 'utf8'));
 const result = compareMirror(canonical, mirror, { reviewedField: 'lastReviewed' });
 if (!result.ok) {
-  console.error(JSON.stringify(result, null, 2));
+  console.error(JSON.stringify(result, (_key, value) => (typeof value === 'bigint' ? `${value}n` : value), 2));
   process.exit(1);
 }
 ```
 
-Treat `status: 'unknown'` as a failure too. `ok` already does. A gate that passes when it could not read something is not a gate.
+The replacer prints a `bigint` value as text (`10n`); `JSON.stringify` without it throws on one, which would end the step before it printed the report. Treat `status: 'unknown'` as a failure too. `ok` already does. A gate that passes when it could not read something is not a gate.
 
 ## Recipes
 
@@ -460,6 +461,27 @@ const result = compareMirror(rows(en, shared), rows(fr, shared));
 ```
 
 Keys one file lacks, and empty strings that mean "not translated yet", are a separate question; this check leaves them out on purpose.
+
+The recipe is for flat placeholders such as `{name}` and tags such as `<b>`. A message in ICU plural or select syntax (`{count, plural, one {# file} other {# files}}`) holds translated text inside the braces, so the pattern pulls the translated branches into the tokens and reports every such message as changed. Parse those messages with an ICU message parser and compare the argument names and types instead.
+
+### Data that is not a list of records yet
+
+The kit compares records that each carry one id. A map of id to a single value, a list of strings, or rows identified by two fields have to be turned into that shape first, and each of them reads wrongly if you pass it as it is: a scalar map and a list of strings are every entry `invalid` (`not-an-object`), and rows with a composite identity report `missing-key` or a `duplicateKey`. Build the records yourself:
+
+```ts
+// A map of id to one value: the value goes in a field.
+const fromMap = (map: Record<string, number>) => Object.entries(map).map(([id, value]) => ({ id, value }));
+// A list of strings: the string is the id.
+const fromList = (list: string[]) => list.map((id) => ({ id }));
+// Rows identified by two fields: one id that cannot collide, however the fields are spelled.
+const fromRows = (rows: Array<{ provider: string; code: string; rate: number }>) =>
+  rows.map((row) => ({ ...row, id: JSON.stringify([row.provider, row.code]) }));
+
+const rates = compareMirror(fromMap({ 'chase-ur': 1.25, 'amex-mr': 1.2 }), fromMap({ 'chase-ur': 1.0, 'amex-mr': 1.2 }));
+// rates.changed: chase-ur, field "value", 1.25 against 1
+```
+
+A composite id joined with a plain separator can collide (`a|b` and `c` against `a` and `b|c`); `JSON.stringify` of the parts cannot, and it carries no invisible character, so it does not trip the look-alike check.
 
 ### Case-sensitive keys
 
@@ -508,6 +530,6 @@ npm run attw        # check the packed types resolve for ESM consumers
 npm run audit:dependencies
 ```
 
-`npm run bench` rebuilds the package and re-runs the labeled benchmark (see `bench/README.md`); CI runs it after the build. The test suite runs a small subset of it on every `npm test`.
+`npm run bench` rebuilds the package and re-runs the vendored tier of the labeled benchmark (the fetched tier needs `node bench/fetch/fetch.mjs` and `--tier all`; see `bench/README.md`); CI runs the vendored tier after the build. The test suite runs a small subset of it on every `npm test`.
 
 See `ENGINEERING.md` for the design rules and `CONTRIBUTING.md` for how to change behavior.

@@ -19,7 +19,11 @@ options you passed". It does not mean the data is correct. See
 ## Four rules behind every verdict
 
 1. **Fail only on positive evidence.** A difference is reported only when the
-   data shows it. A record is never called missing because it could not be read.
+   data shows it. A record whose id can be read is never called missing because
+   it could not be read otherwise. When a record's id itself cannot be read, ids
+   are not claimed missing while that many unreadable records could account for
+   them; past that count every absent id is listed, and at least one of them is
+   really missing.
 2. **"Can't tell" is its own answer.** An unreadable record, a missing or
    unparseable date, a zoneless timestamp, an empty dataset, a look-alike key
    or a check that compared nothing is reported as `invalid`, `unknown` or
@@ -82,12 +86,12 @@ copies" look the same as "the registry file failed to load".
 | `allowEmpty` | `false` | An empty file loaded by mistake would otherwise pass. | `allowEmpty: true`. |
 | `now` | none | The kit never reads the clock. | Pass a `Date`, epoch milliseconds or an ISO timestamp with a zone, in the years 0001 to 9999. A number outside that range (epoch microseconds or nanoseconds) throws instead of turning the future check off. |
 | `bulkThreshold` | `10` | The owner's choice. More than ten records moving to one new day is the point where a person should look. It is not derived from data. | Pass `bulkThreshold`. Lower it if your bumps are smaller. |
-| Reviewer name changes count as evidence | on, when `reviewerField` is set | The owner's choice. A reviewer name in the data is the only mark of who looked. The kit cannot tell that nobody did. | Leave `reviewerField` unset to stop counting it. |
+| Reviewer name changes count as evidence | on | The owner's choice. A reviewer name in the data is the only mark of who looked. The kit cannot tell that nobody did. Every field counts as evidence unless you exclude it, so the name counts whether or not `reviewerField` is set; `reviewerField` only keeps it counting when `valueFields` is given. | List the field in `ignoreFields` (and leave `reviewerField` unset, since a field cannot be both evidence and ignored), or leave it out of `valueFields`. Leaving `reviewerField` unset alone does not stop it. |
 | Bare date | Midnight UTC | A date with no time needs one fixed reading. | Write a full timestamp with an offset. |
 | Future grace for a bare date | 14 hours | UTC+14 is the furthest-ahead civil offset, so a bare date may truly be today there. A timestamp with an offset gets none. | Not configurable. |
 | Zoneless timestamp | `unknown` | The kit does not guess a zone. | Add `Z` or an offset. |
 | `maxRecords` | 1,000,000 | Bound work on hostile input. | `limits`. |
-| `maxNodes` | 10,000,000 | Same. Ends a pair of ordinary datasets near 350,000 records. | `limits`, raise it for bigger data. |
+| `maxNodes` | 10,000,000 | Same. A record costs about 17 on each side with a short id and three more fields, so the default ends near 290,000 records (370,000 with one field). | `limits`, raise it for bigger data. |
 | `maxDepth` | 64 (at most 1,000) | Same. | `limits`. |
 | `maxKeyLength` | 4,096 (at most 1,048,576) | Same. | `limits`. |
 
@@ -132,7 +136,10 @@ Full tables are in `bench/RESULTS.md`; the corpora and licenses are in
 | Unreadable or ambiguous stamp (`unknown`) | `auditReviewStamps` | 0 of 24 injected, 0 of 14 hand-chosen | 0 of 668, 0 of 26 | **No real event exists** in the corpus. |
 
 All classes together, in the pinned run: 0 false passes in 121,642 items that
-should flag, and 0 false flags in 3,287,820 items that should pass. The class
+should flag, and 0 false flags in 3,287,820 items that should pass. These totals
+include the two fetched locale corpora. `npm run bench` runs the vendored tier
+only (45,205 and 3,156,270); the fetched tier needs `node bench/fetch/fetch.mjs <dir>`
+and then `node bench/run.mjs --tier all --cache <dir>` (`bench/README.md`). The class
 rows overlap (the same pair is scored once per flag), so these are counts of
 verdicts, not of distinct items.
 

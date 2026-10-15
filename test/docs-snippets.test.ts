@@ -153,6 +153,15 @@ const SNIPPETS: Snippet[] = [
       })
       expect(drift.io.exits).toEqual([1])
       expect(drift.io.errors).toHaveLength(1)
+      // A bigint in the report (a value type the README supports) must still print: JSON.stringify alone throws on one.
+      const printed = (drift.io.errors[0] as unknown[])[0] as string
+      expect(JSON.parse(printed)).toMatchObject({ status: 'flagged' })
+      const replacerText = /JSON\.stringify\(result, (\(_key, value\) => .*), 2\)\)/.exec(readme)?.[1]
+      expect(replacerText).toBeDefined()
+      const replacer = vm.runInNewContext(`(${replacerText ?? ''})`) as (key: string, value: unknown) => unknown
+      const withBigint = api.compareMirror([{ id: 'a', supply: 10n }], [{ id: 'a', supply: 11n }])
+      expect(() => JSON.stringify(withBigint)).toThrow()
+      expect(JSON.parse(JSON.stringify(withBigint, replacer, 2))).toMatchObject({ changed: [{ canonical: '10n', mirror: '11n' }] })
     },
   },
   {
@@ -178,6 +187,27 @@ const SNIPPETS: Snippet[] = [
       expect(result.status).toBe('flagged')
       expect(result.compared).toBe(2)
       expect(result.changed).toEqual([{ id: 'greeting', field: 'tokens', change: 'different', canonical: '{name}', mirror: '' }])
+    },
+  },
+  {
+    starts: "// A map of id to one value:",
+    prelude: IMPORT_MIRROR,
+    suffix: 'export { rates, fromMap, fromList, fromRows };',
+    check: ({ first }) => {
+      const rates = first.out['rates'] as MirrorResult
+      expect(rates.changed).toEqual([{ id: 'chase-ur', field: 'value', change: 'different', canonical: 1.25, mirror: 1 }])
+      const fromList = first.out['fromList'] as (list: string[]) => Array<Record<string, unknown>>
+      expect(api.compareMirror(fromList(['USD', 'EUR']), fromList(['EUR', 'USD'])).status).toBe('ok')
+      expect(api.compareMirror(fromList(['USD', 'EUR']), fromList(['USD'])).missing).toEqual(['EUR'])
+      const fromRows = first.out['fromRows'] as (rows: Array<{ provider: string; code: string; rate: number }>) => Array<Record<string, unknown>>
+      const rows = [{ provider: 'a|b', code: 'c', rate: 1 }, { provider: 'a', code: 'b|c', rate: 2 }]
+      const same = api.compareMirror(fromRows(rows), fromRows(rows.map((r) => ({ ...r }))))
+      expect(same.status).toBe('ok')
+      expect(same.duplicateKeys).toEqual([])
+      expect(api.compareMirror(fromRows(rows), fromRows([{ ...rows[0] as object, rate: 9 } as (typeof rows)[0], rows[1] as (typeof rows)[0]])).changed).toHaveLength(1)
+      // The README says the unconverted shapes read wrongly.
+      expect(api.compareMirror({ 'chase-ur': 1.25 }, { 'chase-ur': 1.25 }).invalid.map((i) => i.reason)).toEqual(['not-an-object', 'not-an-object'])
+      expect(api.compareMirror(['USD'], ['USD']).invalid.map((i) => i.reason)).toEqual(['not-an-object', 'not-an-object'])
     },
   },
   {

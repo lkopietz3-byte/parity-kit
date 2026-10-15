@@ -33,7 +33,9 @@ imports a `node:` module, so it is browser-safe.
   `unreadable`): the ids the other side lacks are not reported as `missing` or
   `extra` while that many unreadable records could account for them, because
   the unreadable one may be the counterpart. Past that count the surplus is
-  evidence and everything absent is listed.
+  evidence and everything absent is listed, so at most as many listed ids as there
+  are unreadable records may really be present: the claim is that at least one is
+  missing, which is why the result is `flagged` and not `unknown`.
 - **A run that checked nothing is never `ok`.** What is wrong with the options
   alone throws: `fields: []`, or a `fields` list that `ignoreFields` cancels
   entirely, is `bad-options`. What depends on the data is reported, not thrown
@@ -212,6 +214,11 @@ beside `dist/` and nothing else.
 
 Publishing happens only when a `v*` tag is pushed. `.github/workflows/release.yml`
 refuses to run off a tag, refuses a tag that does not match the `package.json`
-version, runs the audit, `npm run verify` and `npm run attw`, skips a version
-that is already on the registry, and publishes with trusted publishing
-(`id-token: write`, no stored token). Never run `npm publish` by hand.
+version, requires a successful `Verify` workflow run on the tagged commit (the
+Node 20 to 24 consumer matrix included), runs the audit, `npm run verify` and
+`npm run attw` once, skips a version that is already on the registry, and
+publishes with trusted publishing (`id-token: write`, no stored token, no npm
+cache) and `--ignore-scripts`, so the tested `dist/` is what ships and the suite
+does not run again. The first publish of the unclaimed name needs a pending
+trusted publisher for `release.yml` set up on npmjs.com beforehand
+(`CONTRIBUTING.md`). Never run `npm publish` by hand.
