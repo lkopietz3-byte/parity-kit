@@ -68,15 +68,14 @@ const forbidden = [
 ];
 const leaked = packed.filter((p) => forbidden.some((re) => re.test(p)));
 assert.deepEqual(leaked, [], `Tarball contains files that must not ship: ${leaked.join(', ')}`);
-// This kit is private and UNLICENSED: it ships no LICENSE file and names no
-// repository, homepage or bugs URL. Keep the manifest honest about that.
-assert.equal(pkg.private, true, 'package.json must stay "private": true');
-assert.equal(pkg.license, 'UNLICENSED', 'package.json license must be "UNLICENSED"');
-for (const field of ['repository', 'homepage', 'bugs']) {
-  assert.equal(pkg[field], undefined, `package.json must not set "${field}"`);
-}
-assert.ok(!packed.some((p) => /(^|\/)LICEN[SC]E/i.test(p)), 'Tarball must not contain a LICENSE file');
-for (const required of ['package.json', 'README.md', 'CHANGELOG.md']) {
+// This is a public MIT package: the manifest must say so, name its repository,
+// and the tarball must ship the LICENSE file.
+assert.notEqual(pkg.private, true, 'package.json must not be "private": true');
+assert.equal(pkg.license, 'MIT', 'package.json license must be "MIT"');
+assert.equal(pkg.repository?.url, 'git+https://github.com/lkopietz3-byte/parity-kit.git', 'package.json repository.url is wrong');
+assert.equal(pkg.homepage, 'https://github.com/lkopietz3-byte/parity-kit#readme', 'package.json homepage is wrong');
+assert.equal(pkg.bugs?.url, 'https://github.com/lkopietz3-byte/parity-kit/issues', 'package.json bugs.url is wrong');
+for (const required of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'METHOD.md']) {
   assert.ok(packed.includes(required), `Tarball is missing ${required}`);
 }
 assert.ok(packed.some((p) => p.startsWith('dist/')), 'Tarball has no dist/ output; run npm run build first');

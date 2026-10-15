@@ -32,6 +32,12 @@ commit message and `CHANGELOG.md`.
 
 ## Publishing
 
-This package is private (`"private": true`, `"license": "UNLICENSED"`). Do not
-publish it, push tags, or add a LICENSE file or repository fields without
-the owner's decision.
+parity-kit is a public MIT package. It is published only by pushing a `v*` tag
+whose version matches `package.json`; `.github/workflows/release.yml` then runs
+the checks and publishes with npm trusted publishing. Never run `npm publish`
+by hand, and do not push tags without the owner's decision. Before tagging,
+update `CHANGELOG.md` and run `npm run verify`, `npm run attw` and
+`npm pack --dry-run`.
+
+Security problems go through GitHub private vulnerability reporting, not a
+public issue (see `SECURITY.md`).

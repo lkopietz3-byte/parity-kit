@@ -182,7 +182,13 @@ support on Node 20.19+ / 22.12+).
 
 ## Release status
 
-The package is private and UNLICENSED. There is no release process: do not
-publish, tag or push without the owner's decision. `verify:package` checks that
-the manifest stays private, has no `repository`, `homepage` or `bugs` field,
-and that no LICENSE file ships.
+parity-kit is a public MIT package. `verify:package` checks that the manifest
+is not private, says `MIT`, names the repository, homepage and bugs URLs, and
+that the tarball ships `LICENSE`, `README.md`, `METHOD.md` and `CHANGELOG.md`
+beside `dist/` and nothing else.
+
+Publishing happens only when a `v*` tag is pushed. `.github/workflows/release.yml`
+refuses to run off a tag, refuses a tag that does not match the `package.json`
+version, runs the audit, `npm run verify` and `npm run attw`, skips a version
+that is already on the registry, and publishes with trusted publishing
+(`id-token: write`, no stored token). Never run `npm publish` by hand.

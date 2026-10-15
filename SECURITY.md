@@ -22,9 +22,16 @@ every input is treated as hostile:
 - Reported values are copies with `null`-prototype objects; keys such as
   `__proto__` are data and cannot pollute a prototype.
 
-This package is private and is not published. If you find a way to make a
-check pass that should fail, or to hang or crash it with a crafted input,
-report it to the owner directly and include a minimal reproduction.
+## Reporting a vulnerability
+
+Please report suspected vulnerabilities privately, not in a public issue. Use
+[GitHub private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)
+on the repository: open the Security tab of
+https://github.com/lkopietz3-byte/parity-kit and choose "Report a vulnerability".
+
+The cases that matter most are a crafted input that makes a check pass when it
+should fail, and one that hangs or crashes a call. Please include the affected
+version, a minimal reproduction and the impact you expect.
 
 ## Bug bounty
 

@@ -21,7 +21,7 @@ Check that every copy of a fact still matches its source of truth, and that a re
 - Run `npm run verify` and read its output before calling work done. Report any step that did not run.
 - Build cleans `dist/` first; never trust a stale `dist/` for declaration or package checks.
 - Never weaken lint, tests or `api-surface.json` to get green. Never edit a fixture or an expected verdict to make a test pass; if a verdict must change, say so and name the input. Public API changes are deliberate (`node scripts/verify-package.mjs --update-api`) and must be called out.
-- This package is private and UNLICENSED. Do not add a LICENSE file, a repository, homepage or bugs field, or run `npm publish`. Do not push, tag or open pull requests without explicit permission.
+- This is a public MIT package (`LICENSE`, `repository`, `homepage` and `bugs` are set; `verify:package` enforces them). It is published only by pushing a `v*` tag, which runs `.github/workflows/release.yml` (trusted publishing). Never run `npm publish` by hand. Do not push, tag or open pull requests without explicit permission.
 - Runtime `dependencies` stay empty; add dev tooling only. Nothing in `src` may import `node:` modules.
 - Keep unrelated uncommitted work intact; commit by explicit path and never stage or reset the whole tree.
 

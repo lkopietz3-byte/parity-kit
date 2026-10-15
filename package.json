@@ -1,7 +1,6 @@
 {
   "name": "parity-kit",
   "version": "0.1.0",
-  "private": true,
   "description": "Check that every copy of a fact still matches its source of truth, and that a review date was earned by an actual recheck. Compares a canonical record set to its mirrors, finds hand-typed copies of registered constants in text, and audits review stamps between two snapshots. Zero-dependency, framework-agnostic TypeScript.",
   "keywords": [
     "data-parity",
@@ -12,10 +11,23 @@
     "data-quality",
     "honesty",
     "ci",
-    "honesty-kits"
+    "honesty-kits",
+    "mirror-check",
+    "stale-data",
+    "dataset-diff",
+    "typescript",
+    "zero-dependency"
   ],
   "author": "Lucas Kopietz",
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lkopietz3-byte/parity-kit.git"
+  },
+  "homepage": "https://github.com/lkopietz3-byte/parity-kit#readme",
+  "bugs": {
+    "url": "https://github.com/lkopietz3-byte/parity-kit/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,6 +42,8 @@
   "files": [
     "dist",
     "README.md",
+    "METHOD.md",
+    "LICENSE",
     "CHANGELOG.md"
   ],
   "engines": {
