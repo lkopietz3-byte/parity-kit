@@ -45,10 +45,21 @@ type Rand = () => number
 const int = (r: Rand, n: number): number => Math.floor(r() * n)
 const pick = <T>(r: Rand, list: readonly T[]): T => list[int(r, list.length)] as T
 
-const STRINGS = ['', ' ', 'a', 'A', 'abc', 'é', 'é', '1.25', '2026-06-08', '日本語', 'x y', 'null', '0']
+const STRINGS = ['', ' ', 'a', 'A', 'abc', 'e\u0301', '\u00e9', '1.25', '2026-06-08', '日本語', 'x y', 'null', '0']
 const NUMBERS = [0, 1, -1, 2, 7, 0.1, 0.2, 0.3, 1.25, 1.2500000001, 1e21, -3.5, 100]
 const FIELDS = ['a', 'b', 'c', 'd', 'e']
+// Field names that look odd or mean something to a program. The empty name is left out of both lists on purpose:
+// deep-diff does not see a new property with that name (ruling R17).
+const ODD_FIELDS = ['a b', '0', '1', '\u00e9', 'e\u0301', '\u202e', 'x.y', '[0]', 'id2']
+// Names that also exist on Object.prototype. microdiff does not see a new property with one of these names
+// (ruling R19), so datasets built from them are compared with deep-diff only.
+const INHERITED_FIELDS = ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']
 const INNER = ['x', 'y', 'z']
+
+/** Own data property, also for names such as `__proto__` that a plain assignment would treat as the prototype. */
+function setField(target: Rec, name: string, v: Json): void {
+  Object.defineProperty(target, name, { value: v, enumerable: true, writable: true, configurable: true })
+}
 
 function value(r: Rand, depth: number): Json {
   const kind = int(r, depth >= 2 ? 5 : 7)
@@ -75,10 +86,10 @@ function value(r: Rand, depth: number): Json {
   }
 }
 
-function record(r: Rand): Rec {
+function record(r: Rand, names: readonly string[]): Rec {
   const out: Rec = {}
-  for (const f of FIELDS) if (r() < 0.7) out[f] = value(r, 0)
-  if (Object.keys(out).length === 0) out['a'] = value(r, 0)
+  for (const f of names) if (r() < 0.7) setField(out, f, value(r, 0))
+  if (Object.keys(out).length === 0) setField(out, names[0] as string, value(r, 0))
   return out
 }
 
@@ -102,17 +113,17 @@ function mutateValue(r: Rand, v: Json): Json {
   return value(r, 1)
 }
 
-function mutateRecord(r: Rand, rec: Rec): Rec {
+function mutateRecord(r: Rand, rec: Rec, pool: readonly string[]): Rec {
   const out = copy(rec)
   const op = int(r, 5)
   const names = Object.keys(out)
   if (op === 0 && names.length > 0) {
     const f = pick(r, names)
-    out[f] = mutateValue(r, out[f] as Json)
+    setField(out, f, mutateValue(r, out[f] as Json))
   } else if (op === 1 && names.length > 1) {
     delete out[pick(r, names)]
   } else if (op === 2) {
-    out[pick(r, FIELDS)] = value(r, 0)
+    setField(out, pick(r, pool), value(r, 0))
   } else if (op === 3 && names.length > 0) {
     // Same content, keys in another order: must never count as a difference.
     return Object.fromEntries(Object.entries(out).reverse())
@@ -125,17 +136,17 @@ interface Dataset {
   mirror: Array<Rec & { id: string }>
 }
 
-function dataset(r: Rand): Dataset {
+function dataset(r: Rand, names: readonly string[] = FIELDS): Dataset {
   const count = 1 + int(r, 7)
   const canonical: Dataset['canonical'] = []
-  for (let i = 0; i < count; i += 1) canonical.push({ id: `r${i}`, ...record(r) })
+  for (let i = 0; i < count; i += 1) canonical.push({ id: `r${i}`, ...record(r, names) })
   let mirror: Dataset['mirror'] = []
   for (const rec of canonical) {
     if (r() < 0.1) continue // missing from the mirror
     const { id, ...rest } = rec
-    mirror.push({ id, ...(r() < 0.5 ? mutateRecord(r, rest) : copy(rest)) })
+    mirror.push({ id, ...(r() < 0.5 ? mutateRecord(r, rest, names) : copy(rest)) })
   }
-  for (let i = int(r, 3) === 0 ? 1 + int(r, 2) : 0; i > 0; i -= 1) mirror.push({ id: `x${i}-${count}`, ...record(r) })
+  for (let i = int(r, 3) === 0 ? 1 + int(r, 2) : 0; i > 0; i -= 1) mirror.push({ id: `x${i}-${count}`, ...record(r, names) })
   mirror = mirror
     .map((rec) => ({ rec, k: r() }))
     .sort((p, q) => p.k - q.k)
@@ -239,6 +250,32 @@ describe('differential: compareMirror vs deep-diff and microdiff', () => {
   })
 })
 
+describe('differential: field names with a special meaning', () => {
+  it.each([
+    ['odd spellings (a space, digits, accents written two ways, a right-to-left override, dots, brackets)', ODD_FIELDS, true],
+    ['names that exist on Object.prototype (deep-diff only; see R19)', [...ODD_FIELDS, ...INHERITED_FIELDS], false],
+  ] as const)('agrees on 5000 seeded datasets with %s', (_name, names, withMicrodiff) => {
+    const r = rng(SEED + (withMicrodiff ? 9 : 10))
+    const disagreements: string[] = []
+    let changed = 0
+    for (let n = 0; n < 5000; n += 1) {
+      const d = dataset(r, names)
+      const kit = viaKit(d)
+      changed += kit.verdict.changed.length
+      const k = JSON.stringify(kit.verdict)
+      const a = viaDeepDiff(d)
+      if (k !== JSON.stringify(a)) disagreements.push(`#${n} deep-diff ${JSON.stringify(a)} vs kit ${k}`)
+      if (withMicrodiff) {
+        const b = viaMicrodiff(d)
+        if (k !== JSON.stringify(b)) disagreements.push(`#${n} microdiff ${JSON.stringify(b)} vs kit ${k}`)
+      }
+      expect(kit.result.invalid).toEqual([])
+    }
+    expect(disagreements.slice(0, 5)).toEqual([])
+    expect(changed).toBeGreaterThan(5000)
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Properties that need no reference implementation
 // ---------------------------------------------------------------------------
@@ -302,8 +339,10 @@ describe('properties of compareMirror', () => {
 type Outcome = 'same' | 'different' | 'refused'
 interface Ruling {
   id: string
+  /** The value of a field `v`, or, when `record` is set, the whole record body. */
   canonical: unknown
   mirror: unknown
+  record?: boolean
   options?: { numberTolerance?: number }
   kit: Outcome
   deepDiff: Outcome
@@ -335,23 +374,29 @@ const RULINGS: Ruling[] = [
   { id: 'R14 key order inside a nested object', canonical: { a: 1, b: 2 }, mirror: { b: 2, a: 1 }, kit: 'same', deepDiff: 'same', microdiff: 'same' },
   { id: 'R15 array order', canonical: [1, 2], mirror: [2, 1], kit: 'different', deepDiff: 'different', microdiff: 'different' },
   { id: 'R16 a string vs the number it spells', canonical: '1', mirror: 1, kit: 'different', deepDiff: 'different', microdiff: 'different' },
+  // JSON.parse is the only way to get a property named '' without a computed key; deep-diff treats the empty name as "no key".
+  { id: 'R17 a property named "" that only the mirror has', canonical: {}, mirror: JSON.parse('{"":1}') as unknown, record: true, kit: 'different', deepDiff: 'same', microdiff: 'different' },
+  { id: 'R18 a property named "" with a different value', canonical: JSON.parse('{"":1}') as unknown, mirror: JSON.parse('{"":2}') as unknown, record: true, kit: 'different', deepDiff: 'different', microdiff: 'different' },
+  { id: 'R19 a property named constructor that only the mirror has', canonical: {}, mirror: JSON.parse('{"constructor":1}') as unknown, record: true, kit: 'different', deepDiff: 'different', microdiff: 'same' },
 ]
 
-function kitOutcome(a: unknown, b: unknown, options?: { numberTolerance?: number }): Outcome {
-  const r = compareMirror([{ id: 'x', v: a }], [{ id: 'x', v: b }], options)
+const wrap = (row: Ruling, value: unknown): object => (row.record === true ? (value as object) : { v: value })
+
+function kitOutcome(row: Ruling): Outcome {
+  const r = compareMirror([{ id: 'x', ...wrap(row, row.canonical) }], [{ id: 'x', ...wrap(row, row.mirror) }], row.options)
   if (r.invalid.length > 0) return 'refused'
   return r.changed.length > 0 ? 'different' : 'same'
 }
 
-function libOutcome(run: (x: unknown, y: unknown) => number, a: unknown, b: unknown): Outcome {
-  return run({ v: a }, { v: b }) > 0 ? 'different' : 'same'
+function libOutcome(run: (x: unknown, y: unknown) => number, row: Ruling): Outcome {
+  return run(wrap(row, row.canonical), wrap(row, row.mirror)) > 0 ? 'different' : 'same'
 }
 
 describe('rulings: known disagreements with generic diffs', () => {
   it.each(RULINGS.map((row) => [row.id, row] as const))('%s', (_name, row) => {
-    expect(kitOutcome(row.canonical, row.mirror, row.options)).toBe(row.kit)
-    expect(libOutcome((x, y) => deepDiff(x, y)?.length ?? 0, row.canonical, row.mirror)).toBe(row.deepDiff)
-    expect(libOutcome((x, y) => microdiff(x as object, y as object).length, row.canonical, row.mirror)).toBe(row.microdiff)
+    expect(kitOutcome(row)).toBe(row.kit)
+    expect(libOutcome((x, y) => deepDiff(x, y)?.length ?? 0, row)).toBe(row.deepDiff)
+    expect(libOutcome((x, y) => microdiff(x as object, y as object).length, row)).toBe(row.microdiff)
   })
 
   it('every disagreement in the table is named in docs/differential.md', () => {

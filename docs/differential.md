@@ -29,7 +29,7 @@ arrays. Nothing else is shared.
 The generator is in the test file only (a seeded mulberry32, seed 20261014). It
 builds 1 to 7 records with up to five fields of JSON values (null, booleans,
 numbers including `0.1`, `1.25` and `1e21`, strings including `''`, combining
-accents and CJK, arrays and objects up to three levels deep), then makes a
+accents and CJK, and arrays and objects nested two containers deep), then makes a
 mirror by editing some records (replace a value, change something nested,
 delete or add a field, reorder the keys), dropping about one record in ten,
 adding one or two unknown records and shuffling the order.
@@ -72,7 +72,7 @@ reports for the pair.
 | R5 | two Date objects for the same instant | same | same | same | Agreement. |
 | R6 | a Date against its ISO string | different | different | different | Agreement: a Date is not a string. |
 | R7 | a hole in an array (`[1, , 3]`) | refused | different | different | The kit cannot tell what a hole means and refuses the record. The libraries compare it with `undefined`. |
-| R8 | two Maps with different contents | refused | same | same | Both libraries read a Map as an object with no enumerable properties, so two different Maps look identical. The kit refuses a Map rather than pass it. This is the one place a generic diff silently says "no difference" about different data. |
+| R8 | two Maps with different contents | refused | same | same | Both libraries read a Map as an object with no enumerable properties, so two different Maps look identical. The kit refuses a Map rather than pass it. |
 | R9 | a class instance against a plain object with the same fields | refused | same | same | The kit reads plain data only. The libraries compare the own fields and call them equal. |
 | R10 | two different functions | refused | different | different | Functions are not data; the kit refuses them. |
 | R11 | a boxed `Number(1)` against `1` | refused | different | different | The kit refuses boxed primitives. |
@@ -81,10 +81,23 @@ reports for the pair.
 | R14 | key order inside a nested object | same | same | same | Agreement. |
 | R15 | array order | different | different | different | Agreement: arrays are ordered. |
 | R16 | the string `"1"` against the number `1` | different | different | different | Agreement. |
+| R17 | a property named `""` (the empty string) that only the mirror has | different | same | different | deep-diff does not see a new property whose name is empty, so it reports no difference between `{}` and `{"": 1}`. The kit reports `extra-in-mirror`. |
+| R18 | a property named `""` with a different value | different | different | different | Agreement: the empty name is only lost when the property is new. |
+| R19 | a property named `constructor` that only the mirror has | different | different | same | microdiff treats a new property as "not new" when its name also exists on `Object.prototype` (checked for `constructor`, `toString`, `valueOf`, `hasOwnProperty`, `__proto__`, `isPrototypeOf`, `propertyIsEnumerable`, `toLocaleString` and `__defineGetter__`), so it reports no difference. The kit and deep-diff report it. |
 
 Where a row says "refused", the kit is deliberately stricter than a generic
 diff: it would rather report "I could not read this" than answer "no
-difference".
+difference". Rows R8, R9, R17 and R19 are the places where a generic diff says
+"no difference" about data that differs.
+
+Two more seeded runs of 5,000 datasets each use unusual field names. The first
+draws from a space, `0`, `1`, an accented letter written two ways, a
+right-to-left override, `x.y` and `[0]`, and the kit agrees with both libraries
+on every dataset. The second adds the names that also exist on
+`Object.prototype` (`__proto__`, `constructor`, `toString`, `valueOf`,
+`hasOwnProperty`); microdiff cannot take part there (R19), and the kit agrees
+with deep-diff on every dataset. The empty name is left out of both lists
+because of R17.
 
 ## Re-running
 
