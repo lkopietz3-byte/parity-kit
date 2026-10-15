@@ -39,3 +39,5 @@ interface ImportMeta {
   readonly dirname: string
   readonly url: string
 }
+
+declare const performance: { now(): number }

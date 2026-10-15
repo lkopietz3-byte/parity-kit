@@ -1,18 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
+import { GROWTH_LIMIT, growthRatio } from './growth.js'
 import { cpuMs, program, programs } from './helpers.js'
 
 vi.setConfig({ testTimeout: 600_000 })
 
-// Scaling tests. CPU time is measured (not wall time) and the best of three
-// runs is used. Four times the input must cost well under sixteen times the
-// time; linear work is about four.
-
-function ratio(small: () => void, large: () => void): number {
-  const a = cpuMs(small)
-  const b = cpuMs(large)
-  return b / Math.max(a, 1)
-}
+// Scaling tests. Every "stays linear" test goes through growthRatio (test/growth.ts): CPU time is
+// measured (not wall time), repeated until the small input costs a measurable amount, and the best
+// of five runs is used. Four times the input must cost under GROWTH_LIMIT times the CPU; linear work
+// is about four, quadratic about sixteen. Sizes below are the 4x steps each test is about.
 
 describe('100k records', () => {
   it('compareMirror reads 100k records on each side and finds one drifted record', () => {
@@ -31,16 +27,29 @@ describe('100k records', () => {
   })
 
   it('compareMirror time grows about linearly with the records', () => {
-    const small = [programs(30_000), programs(30_000)] as const
-    const large = [programs(120_000), programs(120_000)] as const
-    const r = ratio(() => compareMirror(small[0], small[1]), () => compareMirror(large[0], large[1]))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const a = programs(n)
+        const b = programs(n)
+        return () => compareMirror(a, b)
+      },
+      { small: 30_000, large: 120_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('compareMirror with 100k look-alike keys stays linear', () => {
     const make = (n: number): Array<{ id: string }> => Array.from({ length: n }, (_, i) => ({ id: `K${i}` }))
-    const r = ratio(() => compareMirror(make(30_000), make(30_000)), () => compareMirror(make(120_000), make(120_000)))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const a = make(n)
+        const b = make(n)
+        return () => compareMirror(a, b)
+      },
+      { small: 30_000, large: 120_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
+
   })
 
   it('compareMirror with every record missing from the mirror is linear', () => {
@@ -62,11 +71,15 @@ describe('100k records', () => {
       const before = programs(n).map((p) => ({ ...p, source: 's' }))
       return [before, before.map((p) => ({ ...p, baselineCpp: 2, reviewedOn: '2026-10-10' }))]
     }
-    const small = build(30_000)
-    const large = build(120_000)
     const o = { reviewedField: 'reviewedOn', sourceFields: ['source'] }
-    const r = ratio(() => auditReviewStamps(small[0], small[1], o), () => auditReviewStamps(large[0], large[1], o))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const [before, after] = build(n)
+        return () => auditReviewStamps(before, after, o)
+      },
+      { small: 30_000, large: 120_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('an id-keyed object with 100k keys', () => {
@@ -100,9 +113,14 @@ describe('1 MB of text', () => {
   })
 
   it('time grows about linearly with the text', () => {
-    const small = prose(250_000)
-    const large = prose(1_000_000)
-    expect(ratio(() => findHandTypedConstants(small, registry), () => findHandTypedConstants(large, registry))).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const text = prose(n)
+        return () => findHandTypedConstants(text, registry)
+      },
+      { small: 250_000, large: 1_000_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
   const adversarial: Array<[string, (n: number) => string]> = [
@@ -123,15 +141,27 @@ describe('1 MB of text', () => {
     ['hostile-F7 Thai and Hangul runs', (n) => 'อัตรา1값은'.repeat(n / 8)],
   ]
   it.each(adversarial)('stays linear on %s', (_name, make) => {
-    const r = ratio(() => findHandTypedConstants(make(200_000), registry), () => findHandTypedConstants(make(800_000), registry))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const text = make(n)
+        return () => findHandTypedConstants(text, registry)
+      },
+      { small: 200_000, large: 800_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('stays linear when forms overlap heavily', () => {
     const forms = Array.from({ length: 12 }, (_, i) => 'a'.repeat(i + 1))
     const reg = [{ id: 'a', value: 'zzz', forms }]
-    const r = ratio(() => findHandTypedConstants('a'.repeat(200_000), reg), () => findHandTypedConstants('a'.repeat(800_000), reg))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const text = 'a'.repeat(n)
+        return () => findHandTypedConstants(text, reg)
+      },
+      { small: 200_000, large: 800_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('finds a hand-typed value at the very end of 1 MB', () => {
@@ -174,12 +204,14 @@ describe('hostile keys', () => {
   })
 
   it('overlength key cost does not grow with the key length', () => {
-    const run = (n: number) => () => {
+    const run = (n: number) => {
       const key = ' '.repeat(n)
       const records = Array.from({ length: 300 }, () => ({ id: key }))
-      for (let i = 0; i < 20; i += 1) compareMirror(records, records)
+      return () => {
+        for (let i = 0; i < 20; i += 1) compareMirror(records, records)
+      }
     }
-    expect(ratio(run(250_000), run(1_000_000))).toBeLessThan(10)
+    expect(growthRatio(run, { small: 250_000, large: 1_000_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('a key built to make normalization quadratic is refused quickly, whatever maxNodes says', () => {
@@ -235,7 +267,15 @@ describe('hostile keys', () => {
 
   it('a hundred thousand ordinary keys stay linear', () => {
     const make = (n: number): Array<{ id: string }> => Array.from({ length: n }, (_, i) => ({ id: `key-${i}` }))
-    expect(ratio(() => compareMirror(make(20_000), make(20_000)), () => compareMirror(make(80_000), make(80_000)))).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const a = make(n)
+        const b = make(n)
+        return () => compareMirror(a, b)
+      },
+      { small: 20_000, large: 80_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 })
 
@@ -252,17 +292,28 @@ describe('duplicate forms and memory', () => {
   it('many distinct overlapping forms on a long text stay linear in the text', () => {
     const forms = Array.from({ length: 30 }, (_, i) => '-'.repeat(i + 1))
     const reg = [{ id: 'x', value: 'zzz', forms }]
-    const r = ratio(() => findHandTypedConstants('-'.repeat(20_000), reg), () => findHandTypedConstants('-'.repeat(80_000), reg))
-    expect(r).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const text = '-'.repeat(n)
+        return () => findHandTypedConstants(text, reg)
+      },
+      { small: 20_000, large: 80_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 })
 
 describe('empty objects', () => {
   it('100k records with empty-object fields stay linear', () => {
     const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
-    const small = build(1500)
-    const large = build(6000)
-    expect(ratio(() => compareMirror(small, small), () => compareMirror(large, large))).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const records = build(n)
+        return () => compareMirror(records, records)
+      },
+      { small: 1500, large: 6000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 })
 
@@ -270,19 +321,26 @@ describe('field-name lists', () => {
   const names = (n: number): string[] => Array.from({ length: n }, (_, i) => `field-${i}`)
 
   it('compareMirror option lists stay linear', () => {
-    const run = (n: number) => () => compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v', ...names(n)], ignoreFields: names(n) })
-    expect(ratio(run(8000), run(32_000))).toBeLessThan(10)
+    const run = (n: number) => {
+      const list = names(n)
+      return () => compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v', ...list], ignoreFields: list })
+    }
+    expect(growthRatio(run, { small: 8000, large: 32_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('auditReviewStamps option lists stay linear', () => {
-    const run = (n: number) => () =>
-      auditReviewStamps([{ id: 'a', reviewedOn: '2026-06-08' }], [{ id: 'a', reviewedOn: '2026-06-08' }], {
-        reviewedField: 'reviewedOn',
-        sourceFields: names(n),
-        valueFields: names(n),
-        ignoreFields: names(n).map((x) => `${x}-ignored`),
-      })
-    expect(ratio(run(8000), run(32_000))).toBeLessThan(10)
+    const run = (n: number) => {
+      const list = names(n)
+      const ignored = list.map((x) => `${x}-ignored`)
+      return () =>
+        auditReviewStamps([{ id: 'a', reviewedOn: '2026-06-08' }], [{ id: 'a', reviewedOn: '2026-06-08' }], {
+          reviewedField: 'reviewedOn',
+          sourceFields: list,
+          valueFields: list,
+          ignoreFields: ignored,
+        })
+    }
+    expect(growthRatio(run, { small: 8000, large: 32_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('many source fields over many records stay linear in the records', () => {
@@ -290,9 +348,14 @@ describe('field-name lists', () => {
       const before = Array.from({ length: n }, (_, i) => ({ id: `r${i}`, reviewedOn: '2026-06-08', s1: 1, s2: 2, s3: 3 }))
       return [before, before.map((r) => ({ ...r, s2: 9, reviewedOn: '2026-10-10' }))]
     }
-    const small = build(20_000)
-    const large = build(80_000)
     const o = { reviewedField: 'reviewedOn', sourceFields: ['s1', 's2', 's3'] }
-    expect(ratio(() => auditReviewStamps(small[0], small[1], o), () => auditReviewStamps(large[0], large[1], o))).toBeLessThan(10)
+    const r = growthRatio(
+      (n) => {
+        const [before, after] = build(n)
+        return () => auditReviewStamps(before, after, o)
+      },
+      { small: 20_000, large: 80_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 })

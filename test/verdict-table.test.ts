@@ -9,6 +9,7 @@ import {
   type MirrorOptions,
   type StampOptions,
 } from '../src/index.js'
+import { GROWTH_LIMIT, growthRatio } from './growth.js'
 import { cpuMs, program, programs, structuredCopy } from './helpers.js'
 
 // Verdict regression table. Honest inputs must pass; bad inputs must be
@@ -3010,18 +3011,19 @@ describe('gate-false-pass:GFP-04: printf and format specs are not leading-dot nu
   })
 
   it('gate-false-pass:GFP-04: looking back for printf flags stays linear in the text', () => {
-    const cpu = (text: string): number => {
-      const start = process.cpuUsage()
-      found(0.5, text)
-      const used = process.cpuUsage(start)
-      return (used.user + used.system) / 1000
-    }
     expect(found(0.5, '+ '.repeat(50_000) + '.5')).toEqual(['.5'])
     expect(found(0.5, '+ .5 '.repeat(5))).toHaveLength(5)
-    const small = Math.max(cpu('+ .5 '.repeat(20_000)), 5)
-    const large = cpu('+ .5 '.repeat(80_000))
-    expect(large).toBeLessThan(small * 12)
-  })
+    const r = growthRatio(
+      (n) => {
+        const text = '+ .5 '.repeat(n)
+        return () => {
+          found(0.5, text)
+        }
+      },
+      { small: 20_000, large: 80_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
+  }, 120_000)
 })
 
 describe('gate-hostile:F2: a thousands group needs a leading group of one to three digits', () => {
