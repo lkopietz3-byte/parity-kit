@@ -253,8 +253,8 @@ export function auditReviewStamps(before: unknown, after: unknown, options: Stam
     sourceNames.has(key) ||
     (valueFields?.includes(key) ?? false);
   const cfg = { key, names, includeKey };
-  const b = readDataset(before, 'before', cfg, budget);
-  const a = readDataset(after, 'after', cfg, budget);
+  const b = readDataset(before, 'before', cfg, budget, WHAT);
+  const a = readDataset(after, 'after', cfg, budget, WHAT);
   const bi = indexEntries(b.entries);
   const ai = indexEntries(a.entries);
 

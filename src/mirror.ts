@@ -274,8 +274,8 @@ export function compareMirror(canonical: unknown, mirror: unknown, options?: Mir
   }
   const includeKey = reviewedField === key || (fields?.includes(key) ?? false);
   const cfg = { key, names, includeKey };
-  const c = readDataset(canonical, 'canonical', cfg, budget);
-  const m = readDataset(mirror, 'mirror', cfg, budget);
+  const c = readDataset(canonical, 'canonical', cfg, budget, WHAT);
+  const m = readDataset(mirror, 'mirror', cfg, budget, WHAT);
   const ci = indexEntries(c.entries);
   const mi = indexEntries(m.entries);
 

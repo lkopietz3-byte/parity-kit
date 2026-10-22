@@ -50,6 +50,52 @@ export function readOwn(object: object, key: string): unknown {
 }
 
 /**
+ * The allowed name closest to a misspelled one, or undefined when none is close. Case is ignored and a
+ * swap of two neighbors counts as one edit. Names longer than the longest option are never compared, so
+ * the work is bounded by the (short) option list and not by a hostile key.
+ */
+function nearestName(name: string, allowed: readonly string[]): string | undefined {
+  if (name.length > 40) return undefined;
+  const given = name.toLowerCase();
+  const budget = given.length >= 8 ? 3 : given.length >= 5 ? 2 : 1;
+  let best: string | undefined;
+  let bestDistance = budget + 1;
+  for (const candidate of allowed) {
+    const distance = editDistance(given, candidate.toLowerCase());
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** Optimal string alignment distance: insert, delete, replace or swap two neighbors, each one edit. */
+function editDistance(a: string, b: string): number {
+  const rows: number[][] = [];
+  for (let i = 0; i <= a.length; i += 1) {
+    const row: number[] = new Array<number>(b.length + 1).fill(0);
+    row[0] = i;
+    rows.push(row);
+  }
+  const first = rows[0] as number[];
+  for (let j = 0; j <= b.length; j += 1) first[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = rows[i] as number[];
+    const above = rows[i - 1] as number[];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      let best = Math.min(above[j] as number + 1, row[j - 1] as number + 1, above[j - 1] as number + cost);
+      if (i > 1 && j > 1 && a.charCodeAt(i - 1) === b.charCodeAt(j - 2) && a.charCodeAt(i - 2) === b.charCodeAt(j - 1)) {
+        best = Math.min(best, ((rows[i - 2] as number[])[j - 2] as number) + 1);
+      }
+      row[j] = best;
+    }
+  }
+  return (rows[a.length] as number[])[b.length] as number;
+}
+
+/**
  * Read an options object once. Only own properties are read. An unknown
  * option name is an error, so a misspelled option can never silently
  * disable a check; so is a symbol key or a non-enumerable property, which
@@ -81,7 +127,8 @@ export function readOptions(
         throw new ParityError('bad-options', `${what}: option "${name}" is not enumerable, so it would be skipped`);
       }
       if (!allowed.includes(name)) {
-        throw new ParityError('bad-options', `${what}: unknown option "${name}"`);
+        const near = nearestName(name, allowed);
+        throw new ParityError('bad-options', `${what}: unknown option "${name}"${near === undefined ? '' : ` (did you mean "${near}"?)`}`);
       }
       const value = descriptorValue(options, desc);
       if (value !== undefined) out[name] = value;

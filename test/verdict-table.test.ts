@@ -3686,3 +3686,97 @@ describe('run9:hunt:R9-1: a Rust type suffix after an underscore ends the number
     expect(hit).toMatchObject({ text: '1.25', index: 10, line: 1, column: 11, kind: 'number' })
   })
 })
+
+describe('run9:first5:F11 / F09: a message names the function and says what is wrong', () => {
+  const fail = (fn: () => unknown): { code: string; message: string } => {
+    try {
+      fn()
+    } catch (error) {
+      const e = error as { code: string; message: string }
+      return { code: e.code, message: e.message }
+    }
+    throw new Error('expected the call to throw')
+  }
+  const opts = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+  const call = (...args: unknown[]): unknown => (compareMirror as (...a: unknown[]) => unknown)(...args)
+  const audit = (...args: unknown[]): unknown => (auditReviewStamps as (...a: unknown[]) => unknown)(...args)
+
+  it('run9:first5:F11: compareMirror with one argument says the mirror is missing and shows the call', () => {
+    const e = fail(() => call([{ id: 1 }]))
+    expect(e.code).toBe('bad-input')
+    expect(e.message).toMatch(/^compareMirror: mirror is missing/)
+    expect(e.message).toContain('compareMirror(canonical, mirror, options?)')
+  })
+
+  it('run9:first5:F11: compareMirror with no argument says the canonical set is missing', () => {
+    const e = fail(() => call())
+    expect(e.code).toBe('bad-input')
+    expect(e.message).toMatch(/^compareMirror: canonical is missing/)
+  })
+
+  it('run9:first5:F11: auditReviewStamps names itself and the snapshot that is missing', () => {
+    const e = fail(() => audit([{ id: 'a' }], undefined, opts))
+    expect(e.code).toBe('bad-input')
+    expect(e.message).toMatch(/^auditReviewStamps: after is missing/)
+    expect(e.message).toContain('auditReviewStamps(before, after, options)')
+  })
+
+  it.each([
+    ['null', null, 'null'],
+    ['a string', 'id', 'a string'],
+    ['a number', 5, 'a number'],
+    ['a function', () => [], 'a function'],
+    ['a boolean', true, 'a boolean'],
+  ] as Array<[string, unknown, string]>)('run9:first5:F09: %s says what it got', (_name, value, got) => {
+    const e = fail(() => call(value, []))
+    expect(e.code).toBe('bad-input')
+    expect(e.message).toBe(`compareMirror: canonical must be an array of records or a plain object keyed by id, got ${got}`)
+    expect(fail(() => audit([], value, opts)).message).toBe(`auditReviewStamps: after must be an array of records or a plain object keyed by id, got ${got}`)
+  })
+
+  it.each([
+    ['a Map', new Map()],
+    ['a Set', new Set()],
+    ['a Date', new Date(0)],
+    ['a Promise', Promise.resolve([])],
+    ['a typed array', new Uint8Array(2)],
+    ['a class instance', new (class Foo {})()],
+    ['a null-prototype Map', Object.setPrototypeOf(new Map(), null)],
+  ] as Array<[string, unknown]>)('run9:first5:F09: %s gets the same wording, with "plain object" and the function name', (_name, value) => {
+    const e = fail(() => call([{ id: 'a' }], value))
+    expect(e.code).toBe('bad-input')
+    expect(e.message).toBe('compareMirror: mirror must be an array of records or a plain object keyed by id, not a built-in or class instance such as a Map or Date')
+  })
+
+  it('run9:first5:F09: a limit message carries the function name too', () => {
+    const e = fail(() => call([{ id: 'a' }, { id: 'b' }, { id: 'c' }], [], { limits: { maxRecords: 2 } }))
+    expect(e.code).toBe('too-large')
+    expect(e.message).toBe('compareMirror: canonical has 3 records; the limit is limits.maxRecords (2)')
+    const keyed = fail(() => call({ a: {}, b: {}, c: {} }, {}, { limits: { maxRecords: 2 } }))
+    expect(keyed.message).toMatch(/^compareMirror: canonical has more than 2 records/)
+  })
+
+  it('run9:first5:F09: a misspelled option name suggests the nearest real one', () => {
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { reviewedFeild: 'r' } as MirrorOptions)).message).toBe(
+      'compareMirror: unknown option "reviewedFeild" (did you mean "reviewedField"?)',
+    )
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { reviewedfield: 'r' } as MirrorOptions)).message).toBe(
+      'compareMirror: unknown option "reviewedfield" (did you mean "reviewedField"?)',
+    )
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { ignoreField: ['x'] } as MirrorOptions)).message).toBe(
+      'compareMirror: unknown option "ignoreField" (did you mean "ignoreFields"?)',
+    )
+    expect(fail(() => auditReviewStamps([], [], { ...opts, ignoreFeilds: ['x'] } as StampOptions)).message).toBe(
+      'auditReviewStamps: unknown option "ignoreFeilds" (did you mean "ignoreFields"?)',
+    )
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { limits: { maxNode: 5 } } as unknown as MirrorOptions)).message).toBe(
+      'compareMirror limits: unknown option "maxNode" (did you mean "maxNodes"?)',
+    )
+  })
+
+  it('run9:first5:F09: a name that is not close to any option gets no suggestion, and a long one costs nothing', () => {
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { foo: 1 } as unknown as MirrorOptions)).message).toBe('compareMirror: unknown option "foo"')
+    const long = 'x'.repeat(100_000)
+    expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { [long]: 1 })).message).toBe(`compareMirror: unknown option "${long}"`)
+  })
+})

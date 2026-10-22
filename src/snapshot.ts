@@ -507,28 +507,39 @@ function readRecord(
   }
 }
 
+const DATASET_SHAPE = 'an array of records or a plain object keyed by id';
+const NOT_A_BUILTIN = 'not a built-in or class instance such as a Map or Date';
+/** What each public function takes, shown when a dataset argument is missing. */
+const CALL_SHAPES: Record<string, string> = {
+  compareMirror: 'compareMirror(canonical, mirror, options?)',
+  auditReviewStamps: 'auditReviewStamps(before, after, options)',
+};
+
 /**
  * Read a dataset once into snapshots. An array is read by index; an object is
  * read by its own enumerable string keys, sorted, so the order a Proxy
  * reports keys in never matters. Throws `ParityError` when the argument as a
  * whole cannot be a dataset or is over a limit.
  */
-export function readDataset(input: unknown, side: string, cfg: ReadConfig, budget: Budget): ReadDataset {
+export function readDataset(input: unknown, side: string, cfg: ReadConfig, budget: Budget, what: string): ReadDataset {
   const entries: DatasetEntry[] = [];
   const invalid: DatasetInvalid[] = [];
   const ctx: Ctx = { budget, ancestors: new Set(), trail: [] };
   const recordCfg: ReadConfig = cfg.names === null ? cfg : { ...cfg, nameSet: new Set(cfg.names) };
   try {
+    if (input === undefined) {
+      throw new ParityError('bad-input', `${what}: ${side} is missing; the call is ${CALL_SHAPES[what] ?? what}`);
+    }
     if (typeof input !== 'object' || input === null) {
-      throw new ParityError('bad-input', `${side} must be an array of records or an object keyed by id`);
+      throw new ParityError('bad-input', `${what}: ${side} must be ${DATASET_SHAPE}, got ${input === null ? 'null' : `a ${typeof input}`}`);
     }
     if (Array.isArray(input)) {
       const length = readOwn(input, 'length');
       if (typeof length !== 'number' || !Number.isInteger(length) || length < 0) {
-        throw new ParityError('unreadable-input', `${side}: array length is not readable`);
+        throw new ParityError('unreadable-input', `${what}: ${side}: array length is not readable`);
       }
       if (length > budget.maxRecords) {
-        throw new ParityError('too-large', `${side} has ${length} records; the limit is ${budget.maxRecords}`);
+        throw new ParityError('too-large', `${what}: ${side} has ${length} records; the limit is limits.maxRecords (${budget.maxRecords})`);
       }
       spend(budget, length);
       for (let i = 0; i < length; i += 1) {
@@ -552,10 +563,10 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     }
     const proto = Reflect.getPrototypeOf(input);
     if (proto !== null && Reflect.getPrototypeOf(proto) !== null) {
-      throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id`);
+      throw new ParityError('bad-input', `${what}: ${side} must be ${DATASET_SHAPE}, ${NOT_A_BUILTIN}`);
     }
     if (isBufferView(input)) {
-      throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
+      throw new ParityError('bad-input', `${what}: ${side} must be ${DATASET_SHAPE}, ${NOT_A_BUILTIN}`);
     }
     const keys = Reflect.ownKeys(input);
     // Every own key is looked at (and charged), but only enumerable string keys are records.
@@ -577,12 +588,12 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
         // would cost one descriptor trap per key for a dataset that is
         // refused anyway.
         if (slots.length > budget.maxRecords) {
-          throw new ParityError('too-large', `${side} has more than ${budget.maxRecords} records; the limit is limits.maxRecords (${budget.maxRecords})`);
+          throw new ParityError('too-large', `${what}: ${side} has more than ${budget.maxRecords} records; the limit is limits.maxRecords (${budget.maxRecords})`);
         }
       }
     }
     if (slots.length === 0 && nativeKind(input, proto, facts) !== undefined) {
-      throw new ParityError('bad-input', `${side} must be an array of records or a plain object keyed by id, not a built-in such as a Map or Date`);
+      throw new ParityError('bad-input', `${what}: ${side} must be ${DATASET_SHAPE}, ${NOT_A_BUILTIN}`);
     }
     slots.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     for (const { id, desc } of slots) {
@@ -616,9 +627,9 @@ export function readDataset(input: unknown, side: string, cfg: ReadConfig, budge
     if (isOwnError(error) && error instanceof ParityError) throw error;
     if (isOwnError(error) && error instanceof BudgetExceeded) {
       throw new ParityError('too-large', error.message === 'container limit'
-        ? `${side}: arrays and objects passed the limit of ${budget.maxContainers} (a fifth of limits.maxNodes, never below 1000); raise limits.maxNodes if this data is expected`
-        : `${side}: the total number of values read passed limits.maxNodes (${budget.maxNodes}); every value in both datasets counts, about 17 per record per side with a short id and three more fields, so raise limits.maxNodes if this data is expected`);
+        ? `${what}: ${side}: arrays and objects passed the limit of ${budget.maxContainers} (a fifth of limits.maxNodes, never below 1000); raise limits.maxNodes if this data is expected`
+        : `${what}: ${side}: the total number of values read passed limits.maxNodes (${budget.maxNodes}); every value in both datasets counts, about 18 per record per side with a short id and three more fields, so raise limits.maxNodes if this data is expected`);
     }
-    throw new ParityError('unreadable-input', `${side}: reading the input threw: ${describeError(error)}`);
+    throw new ParityError('unreadable-input', `${what}: ${side}: reading the input threw: ${describeError(error)}`);
   }
 }
