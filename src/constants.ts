@@ -148,6 +148,32 @@ function mantissaIsNonzero(text: string, start: number, end: number): boolean {
 }
 
 /**
+ * Does a Rust numeric type name start at `at`, as a whole word? Rust spells a literal's type after an
+ * underscore (`1.25_f64`, `1_000_000_u64`, `8_usize`), so that underscore ends the number instead of gluing
+ * it to an identifier. Only the fourteen built-in numeric types count, so `1.25_x`, `1.25_f64x` and `8_u` stay
+ * glued. A constant number of comparisons, never a scan.
+ */
+function isNumericTypeSuffix(text: string, at: number): boolean {
+  const first = text.charCodeAt(at);
+  let end = at + 1;
+  if (first === 102) {
+    // f32, f64
+    if (!(text.startsWith('32', end) || text.startsWith('64', end))) return false;
+    end += 2;
+  } else if (first === 105 || first === 117) {
+    // i or u: 8, 16, 32, 64, 128 or size
+    if (text.startsWith('size', end)) end += 4;
+    else if (text.startsWith('128', end)) end += 3;
+    else if (text.startsWith('16', end) || text.startsWith('32', end) || text.startsWith('64', end)) end += 2;
+    else if (text.charCodeAt(end) === 56) end += 1;
+    else return false;
+  } else {
+    return false;
+  }
+  return !gluesTo(charAt(text, end), '0');
+}
+
+/**
  * Scan for numbers in one left-to-right pass. A number is digits with
  * optional "," thousands groups of exactly three digits, an optional "." and
  * fraction, and an optional exponent. A run like 1.25.3 or 3.1.4 (a version,
@@ -232,8 +258,9 @@ function* lexNumbers(text: string): Generator<LexedRun> {
     const leftGlued =
       (before !== '' && gluesTo(before, '0')) || (startsDot && notALeadingDotNumber(text, start, before, j));
     const after = j < n ? charAt(text, j) : '';
-    // "_" glues the number to an identifier; a non-ASCII digit makes it part of a longer number.
-    const rightGlued = after === '_' || (after !== '' && DECIMAL_DIGIT.test(after));
+    // "_" glues the number to an identifier, unless what follows is a Rust type suffix (1.25_f64, 8_usize); a
+    // non-ASCII digit makes it part of a longer number.
+    const rightGlued = (after === '_' && !isNumericTypeSuffix(text, j + 1)) || (after !== '' && DECIMAL_DIGIT.test(after));
     yield { start, end: j, valid: valid && !leftGlued && !rightGlued, leftGlued, rightGlued };
     i = j > i ? j : i + 1;
   }

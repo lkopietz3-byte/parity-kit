@@ -31,7 +31,7 @@ First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newe
 - `findHandTypedConstants(text, registry)` finds hand-typed copies of registered constants,
   with line, column and index. Numbers match by value at token boundaries (`1.25` is not found
   inside `11.256`, `1.25.3`, `v1.25` or `08`), including `1,250` and `1_000_000` style
-  separators, ranges such as `1..5`, and numbers next to unspaced scripts such as Chinese,
+  separators, Rust type suffixes (`1.25_f64`, `1_000_000_u64`, `8_usize`), ranges such as `1..5`, and numbers next to unspaced scripts such as Chinese,
   Japanese, Korean and Thai. A printf or format-spec precision (`%.1f`, `{:.2f}`) is not read as a
   leading-dot number, and a thousands group needs a leading group of one to three digits, so
   `[1000,250]` holds two numbers. Literal forms use an Aho-Corasick automaton, so scanning is linear

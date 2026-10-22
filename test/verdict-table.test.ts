@@ -3610,3 +3610,79 @@ describe('run9:hunt:R9-2: an empty object from another realm is plain data', () 
     }
   })
 })
+
+describe('run9:hunt:R9-1: a Rust type suffix after an underscore ends the number', () => {
+  const texts = (text: string, value: number | string, forms?: string[]): string[] =>
+    findHandTypedConstants(text, [{ id: 'k', value, ...(forms === undefined ? {} : { forms }) }]).map((hit) => hit.text)
+
+  it.each([
+    [1.25, 'const CPP: f64 = 1.25_f64;', '1.25'],
+    [1.25, 'let x = 1.25_f32;', '1.25'],
+    [1.25, 'x=1.25_f32;', '1.25'],
+    [1000000, 'let n = 1_000_000_u64;', '1_000_000'],
+    [1000000, 'let n = 1_000_000_i64;', '1_000_000'],
+    [1000000, 'let n = 1_000_000_u128;', '1_000_000'],
+    [8, 'let n = 8_usize;', '8'],
+    [8, 'let n = 8_isize;', '8'],
+    [8, 'let n = 8_u8;', '8'],
+    [8, 'let n = 8_i16;', '8'],
+    [8, 'let n = 8_u32;', '8'],
+    [1, 'let n = 1_f64.max(2.0);', '1'],
+    [1.25, 'const A: [f64; 2] = [1.25_f64, 2.0_f64];', '1.25'],
+    // The spellings that already worked keep working.
+    [1.25, 'const CPP: f64 = 1.25f64;', '1.25'],
+    [1000000, 'let n = 1_000_000u64;', '1_000_000'],
+    [1.25, 'const CPP: f64 = 1.25;', '1.25'],
+  ] as Array<[number, string, string]>)('%s is found in %j', (value, text, shown) => {
+    expect(texts(text, value)).toEqual([shown])
+  })
+
+  it.each([
+    // Only a Rust numeric type, followed by a boundary, ends the number. Anything else stays glued.
+    [1.25, '1.25_x'],
+    [1.25, '1.25_f6'],
+    [1.25, '1.25_f640'],
+    [1.25, '1.25_f64x'],
+    [1.25, '1.25_f64_'],
+    [1.25, '1.25_f16'],
+    [1.25, '1.25_float'],
+    [1.25, '1.25_u'],
+    [1.25, '1.25_i'],
+    [1.25, '1.25_u1280'],
+    [1.25, '1.25_usizes'],
+    [1.25, '1.25_isize_x'],
+    [1250, '1_250_x'],
+    [1.25, 'x_1.25_f64'],
+    [1.25, 'v1.25_f64'],
+    [1.25, '1.25.3_f64'],
+    [1.25, '1.2_f64'],
+    [1.25, '11.25_f64'],
+    [1.25, '1.255_f64'],
+    [8, '8_U8'],
+    [8, '8_usize_'],
+    [8, '18_usize'],
+  ] as Array<[number, string]>)('%s is NOT found in %j', (value, text) => {
+    expect(texts(text, value)).toEqual([])
+  })
+
+  it('a suffix still ends the number when an unspaced script follows it', () => {
+    expect(texts('值1.25_f64美分', 1.25)).toEqual(['1.25'])
+  })
+
+  it('a literal form that ends in a digit follows the same boundary', () => {
+    expect(texts('x = 8_u8; y = 8_usize;', 'k', ['8'])).toEqual(['8', '8'])
+    expect(texts('x = 8_x;', 'k', ['8'])).toEqual([])
+  })
+
+  it('the README and CHANGELOG name the suffix rule and what stays glued', () => {
+    const doc = (name: string): string => readFileSync(join(import.meta.dirname, '..', name), 'utf8')
+    expect(doc('README.md')).toMatch(/`1\.25_f64`, `1_000_000_u64` and `8_usize`/)
+    expect(doc('README.md')).toMatch(/`1\.25_x` and `1\.25_f64x` are still skipped/)
+    expect(doc('CHANGELOG.md')).toContain('`1.25_f64`')
+  })
+
+  it('reports the offset of the number, not of the suffix', () => {
+    const [hit] = findHandTypedConstants('let cpp = 1.25_f64;', [{ id: 'k', value: 1.25 }])
+    expect(hit).toMatchObject({ text: '1.25', index: 10, line: 1, column: 11, kind: 'number' })
+  })
+})

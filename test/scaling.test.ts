@@ -303,6 +303,20 @@ describe('duplicate forms and memory', () => {
   })
 })
 
+describe('type suffixes', () => {
+  it('run9:hunt:R9-1: text made of Rust-suffixed numbers stays linear', () => {
+    const reg = [{ id: 'k', value: 8 }]
+    const r = growthRatio(
+      (n) => {
+        const text = '8_usize 1_000_000_u64 1.25_f64 8_u 1.25_f64x '.repeat(n)
+        return () => findHandTypedConstants(text, reg)
+      },
+      { small: 2_000, large: 8_000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
+  })
+})
+
 describe('empty objects', () => {
   it('100k records with empty-object fields stay linear', () => {
     const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
