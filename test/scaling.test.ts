@@ -1,9 +1,29 @@
+import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
 import { COST_RATIO_LIMIT, GROWTH_LIMIT, costRatio, growthRatio } from './growth.js'
 import { cpuMs, program, programs } from './helpers.js'
 
 vi.setConfig({ testTimeout: 600_000 })
+
+// True where the empty-object probe is the accelerated one: every brand check is a slot check from Node's
+// util.types (fetched through process.getBuiltinModule) plus Error.isError or util.types.isNativeError.
+// Mirrors `pure` in src/brand.ts. Node 20.0 to 20.15, 22.0 to 22.2 and non-Node runtimes take the supported
+// fallback, which pays about fifteen thrown TypeErrors per empty object (ENGINEERING.md), so a cost-ratio
+// assertion that only the accelerated path can meet must not run there.
+const SLOT_CHECKS = ['isDate', 'isPromise', 'isMap', 'isSet', 'isWeakMap', 'isWeakSet', 'isRegExp', 'isArrayBuffer', 'isSharedArrayBuffer', 'isBoxedPrimitive']
+const accelerated = ((): boolean => {
+  try {
+    const getBuiltinModule = (process as unknown as { getBuiltinModule?: (id: string) => { types?: Record<string, unknown> } | undefined }).getBuiltinModule
+    if (typeof getBuiltinModule !== 'function') return false
+    const types = getBuiltinModule.call(process, 'util')?.types
+    if (types === undefined) return false
+    const native = typeof (Error as unknown as { isError?: unknown }).isError === 'function' || typeof types.isNativeError === 'function'
+    return native && SLOT_CHECKS.every((name) => typeof types[name] === 'function')
+  } catch {
+    return false
+  }
+})()
 
 // Scaling tests. Every "stays linear" test goes through growthRatio (test/growth.ts): CPU time is
 // measured (not wall time), repeated until the small input costs a measurable amount, and the best
@@ -330,7 +350,7 @@ describe('empty objects', () => {
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
-  it('run9:first5:F04: an empty-object column costs about what an empty-array column costs', () => {
+  it.skipIf(!accelerated)('run9:first5:F04: an empty-object column costs about what an empty-array column costs', () => {
     // Before the fix every empty object paid about fifteen thrown TypeErrors (one per built-in it was
     // probed against) and the column cost about thirty times the same data with [] in this test.
     const records = (empty: () => unknown): Array<{ id: string; name: string; tags: unknown }> =>
@@ -342,6 +362,43 @@ describe('empty objects', () => {
       () => compareMirror(arrays, arrays),
     )
     expect(ratio).toBeLessThan(COST_RATIO_LIMIT)
+  })
+
+  // Found failing by run10 Codex review P2: the F04 cost ratio measured 32.1 (26.4 here) with
+  // process.getBuiltinModule removed, because that supported fallback runs the thrown probes. The fallback keeps
+  // its own row: the answers stay right and the cost stays linear in the records.
+  it('run10:codex:P2: without process.getBuiltinModule an empty-object column is read correctly and stays linear', async () => {
+    const proc = process as unknown as { getBuiltinModule?: unknown }
+    const saved = Object.getOwnPropertyDescriptor(process, 'getBuiltinModule')
+    vi.resetModules()
+    let fallback: typeof import('../src/index.js')
+    try {
+      delete proc.getBuiltinModule
+      expect(typeof proc.getBuiltinModule).toBe('undefined')
+      fallback = await import('../src/index.js')
+    } finally {
+      if (saved !== undefined) Object.defineProperty(process, 'getBuiltinModule', saved)
+      vi.resetModules()
+    }
+    expect(typeof proc.getBuiltinModule === 'function').toBe(saved !== undefined)
+
+    const reasons = (v: unknown): string[] => fallback.compareMirror([{ id: 'a', v }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason)
+    // Proves the fallback is the code under test: a foreign-realm empty object is unsupported only there.
+    expect(reasons(vm.runInNewContext('({})'))).toEqual(['unsupported-value'])
+    expect(reasons(Object.setPrototypeOf(new Map(), null))).toEqual(['unsupported-value'])
+    expect(fallback.compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: Object.create(null) as object }]).ok).toBe(true)
+    expect(fallback.compareMirror([{ id: 'a', v: { x: {} } }], [{ id: 'a', v: { x: {} } }]).ok).toBe(true)
+    expect(fallback.compareMirror([{ id: 'a', v: { x: {} } }], [{ id: 'a', v: { x: { y: 1 } } }]).ok).toBe(false)
+
+    const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
+    const r = growthRatio(
+      (n) => {
+        const records = build(n)
+        return () => fallback.compareMirror(records, records)
+      },
+      { small: 1500, large: 6000 },
+    )
+    expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 })
 
