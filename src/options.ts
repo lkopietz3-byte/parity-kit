@@ -51,7 +51,7 @@ export function readOwn(object: object, key: string): unknown {
 
 /**
  * The allowed name closest to a misspelled one, or undefined when none is close. Case is ignored and a
- * swap of two neighbors counts as one edit. Names longer than the longest option are never compared, so
+ * swap of two neighbors counts as one edit. A name longer than forty characters is never compared, so
  * the work is bounded by the (short) option list and not by a hostile key.
  */
 function nearestName(name: string, allowed: readonly string[]): string | undefined {
