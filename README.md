@@ -1,11 +1,11 @@
-# Parity Kit
+# @evidencekit/drift
 
-Check that every copy of a fact still matches its source of truth, and catch review dates that moved with nothing in the data to show a recheck.
+drift checks two things: copies of a fact that drifted from their source of truth, and review dates that moved with nothing in the data to show a recheck. It is part of Evidence Kit: checks that tie AI output and public claims back to their evidence.
 
 Zero dependencies, TypeScript, Node 20 or newer. It reads no files, makes no network calls and reads no clock unless you give it a time. MIT license.
 
 ```sh
-npm i parity-kit
+npm i @evidencekit/drift
 ```
 
 ## Quick start
@@ -13,7 +13,7 @@ npm i parity-kit
 `source` is the data you trust (the report calls it `canonical`). `copy` is a copy of it that you publish somewhere else (the report calls it `mirror`). The example is an ES module: save it as `.mjs`, or set `"type": "module"` in your `package.json`. From CommonJS, see Install.
 
 ```js
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const source = [{ id: 'a', price: 10 }, { id: 'b', price: 20 }];
 const copy = [{ id: 'a', price: 10 }, { id: 'b', price: 25 }];
@@ -42,11 +42,11 @@ Facts get copied. A `programs.json` feeds a website, a browser extension ships i
 - **Drift.** One copy says `1.25` and the other says `1.0`, and both claim the same review date, so the date vouches for a mismatch.
 - **Unearned stamps.** Someone bumps `lastReviewed` on 67 records in one commit. The dates look fresh. Nothing was rechecked.
 
-freshness-kit (a sibling kit) scores how old a review date is. This kit asks a different question: do the copies agree, and did the date move for a reason the data can show.
+`@evidencekit/freshness` (a sibling package) scores how old a review date is. This kit asks a different question: do the copies agree, and did the date move for a reason the data can show.
 
 ## Accuracy on real data
 
-The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be, except in the two fetched locale corpora, whose labels are weaker (see the first limit below). The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. In a checkout of the repository, `npm run bench` re-runs the vendored tier: 45,205 items that should flag and 3,156,270 that should pass, with 0 false passes and 0 false flags. It does not include the row marked fetched, so it does not print the 121,642 and 3,287,820 totals below. Those need `node bench/fetch/fetch.mjs <dir>` (network access; it downloads two AGPL-3.0 sources that are not copied into the repository) and then `node bench/run.mjs --tier all --cache <dir> --check`; see [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md).
+The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be, except in the two fetched locale corpora, whose labels are weaker (see the first limit below). The counts are for @evidencekit/drift 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. In a checkout of the repository, `npm run bench` re-runs the vendored tier: 45,205 items that should flag and 3,156,270 that should pass, with 0 false passes and 0 false flags. It does not include the row marked fetched, so it does not print the 121,642 and 3,287,820 totals below. Those need `node bench/fetch/fetch.mjs <dir>` (network access; it downloads two AGPL-3.0 sources that are not copied into the repository) and then `node bench/run.mjs --tier all --cache <dir> --check`; see [bench/README.md](https://github.com/evidencekit/drift/blob/main/bench/README.md).
 
 | Corpus | An item is | Should flag | Missed (false pass) | Should pass | Flagged anyway (false flag) |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -58,7 +58,7 @@ The kit was scored against labeled public data. An independent script, written f
 | 400 advisory texts | a digit run equal to a registered number | 306 | 0 | 479 | 0 |
 | Advisory history, 75 snapshot pairs (five rule classes) | a record pair, per rule | 315 | 0 | 533,667 to 533,837 per rule | 0 |
 
-Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full table, with a 95% interval on every rate, is in [bench/RESULTS.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/RESULTS.md). Across every class the pinned run has 0 false passes in 121,642 items that should flag and 0 false flags in 3,287,820 items that should pass. The class rows overlap (the same stamp pair is scored once per rule), so those totals count verdicts, not distinct items. Of the should-pass items, 2,947,088 (in both the 3,156,270 and the 3,287,820 totals) re-score the same 533,837 advisory record pairs once per rule or option set; counting each pair once, the 3,156,270 is about 743,000 distinct items.
+Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full table, with a 95% interval on every rate, is in [bench/RESULTS.md](https://github.com/evidencekit/drift/blob/main/bench/RESULTS.md). Across every class the pinned run has 0 false passes in 121,642 items that should flag and 0 false flags in 3,287,820 items that should pass. The class rows overlap (the same stamp pair is scored once per rule), so those totals count verdicts, not distinct items. Of the should-pass items, 2,947,088 (in both the 3,156,270 and the 3,287,820 totals) re-score the same 533,837 advisory record pairs once per rule or option set; counting each pair once, the 3,156,270 is about 743,000 distinct items.
 
 How to read this, and where it stops:
 
@@ -70,26 +70,26 @@ How to read this, and where it stops:
 - **Look-alike keys cost a file-level `unknown`.** On a case-sensitive key set (HTML entity names) 2 of 2 clean copies came back `unknown` until `foldCase: false` was set. The individual keys were still scored correctly.
 - **Public text data only.** Locale files, an entity table, an advisory database, status phrases and license lists. Price lists, catalogs and free-text records are not in the corpus, and your data may behave differently.
 - **It scores equality, not meaning.** `%s` against `%[1]s` prints the same and is reported as drift.
-- Sources, licenses and reproduction steps: [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md). Two generic diff libraries are compared with the kit in [docs/differential.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/docs/differential.md) and [docs/what-a-diff-cannot-answer.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/docs/what-a-diff-cannot-answer.md).
+- Sources, licenses and reproduction steps: [bench/README.md](https://github.com/evidencekit/drift/blob/main/bench/README.md). Two generic diff libraries are compared with the kit in [docs/differential.md](https://github.com/evidencekit/drift/blob/main/docs/differential.md) and [docs/what-a-diff-cannot-answer.md](https://github.com/evidencekit/drift/blob/main/docs/what-a-diff-cannot-answer.md).
 
 ## Install
 
-`npm i parity-kit`. Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
+`npm i @evidencekit/drift`. Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
 
 | How you load it | Works on |
 | --- | --- |
-| `import { compareMirror } from 'parity-kit'` | Node 20 and newer |
-| `const { compareMirror } = require('parity-kit')` | Node 20.19 and newer, and Node 22.12 and newer, where `require()` can load an ES module. Not on Node 20.0 to 20.18 or 22.0 to 22.11: use the `import` line, or `await import('parity-kit')` from CommonJS. |
+| `import { compareMirror } from '@evidencekit/drift'` | Node 20 and newer |
+| `const { compareMirror } = require('@evidencekit/drift')` | Node 20.19 and newer, and Node 22.12 and newer, where `require()` can load an ES module. Not on Node 20.0 to 20.18 or 22.0 to 22.11: use the `import` line, or `await import('@evidencekit/drift')` from CommonJS. |
 
 The continuous-integration matrix builds and tests on Node 20, 20.19.0, 22, 22.12.0 and 24.
 
 To install from a checkout of the repository instead of the registry, build it once first. A fresh checkout has no compiler and no `dist/`:
 
 ```sh
-cd parity-kit
+cd drift
 npm ci && npm run build         # once, inside the checkout
 cd ../your-project
-npm install ../parity-kit       # then install it from your project
+npm install ../drift       # then install it from your project
 ```
 
 If you skip the first step the install stops with a message that names these two commands, instead of failing on a missing compiler.
@@ -99,7 +99,7 @@ If you skip the first step the install stops with a message that names these two
 `programs.json` is the source of truth. `extension/valuations.json` is a copy that ships in a browser extension.
 
 ```ts
-import { compareMirror, findHandTypedConstants, auditReviewStamps } from 'parity-kit';
+import { compareMirror, findHandTypedConstants, auditReviewStamps } from '@evidencekit/drift';
 
 const programs = [
   { id: 'chase-ur', name: 'Chase Ultimate Rewards', baselineCpp: 1.25, lastReviewed: '2026-06-08' },
@@ -149,7 +149,7 @@ Read it as: the extension lacks `bilt`, has a `cap-one` the source does not, dis
 Real files often keep one `reviewed` date next to a `programs` array, not a date on every record. `compareMirror` compares records, so copy the file date onto each record first and pass the arrays, not the whole files:
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const programsFile = {
   reviewed: '2026-06-08',
@@ -172,7 +172,7 @@ With the 1.25 versus 1.0 example above, both files say `reviewed: "2026-06-08"` 
 To stop the next hand-typed copy, scan source files and docs for the registered value:
 
 ```ts
-import { findHandTypedConstants } from 'parity-kit';
+import { findHandTypedConstants } from '@evidencekit/drift';
 
 const sourceText = 'export const chaseUrCpp = 1.25;\n';
 const hits = findHandTypedConstants(sourceText, [{ id: 'chase-ur.baselineCpp', value: 1.25 }]);
@@ -182,7 +182,7 @@ const hits = findHandTypedConstants(sourceText, [{ id: 'chase-ur.baselineCpp', v
 To check a registry change, compare the old and new snapshots:
 
 ```ts
-import { auditReviewStamps } from 'parity-kit';
+import { auditReviewStamps } from '@evidencekit/drift';
 
 const oldSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-01-01', updatedAt: '2026-01-01T00:00:00Z' }];
 const newSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-06-08', updatedAt: '2026-06-08T00:00:00Z' }];
@@ -380,7 +380,7 @@ A field added or removed counts as a change. The expiry field is not evidence: m
 **`bulkBump`:** more than `bulkThreshold` records moved later to the same new **UTC calendar day**, whether or not each also changed. Grouping is by day so a script that writes a different timestamp on every record is still caught. `withEvidence` says how many of the group also changed something. A bulk bump is a request to look closer, not a finding that anything is wrong. Read `summary` first: it says how many of the records also changed a value, source or reviewer (`withEvidence`) and how many did not (`withoutEvidence`, which are also in `stampOnly`). A bump with `withoutEvidence: 0` is an automated but evidenced update, such as a bot refreshing many records at once; it still sets `status` to `flagged`, because a person should confirm the bot's change is real. If you accept that for a source, waive only the evidenced bulk bumps and keep every other finding failing:
 
 ```ts
-import type { StampAudit } from 'parity-kit';
+import type { StampAudit } from '@evidencekit/drift';
 
 const acceptEvidencedBulk = (a: StampAudit) =>
   a.ok ||
@@ -440,7 +440,7 @@ Reading is iterative over records and bounded by these limits, so a 100,000-leve
 
 ```ts
 import { readFileSync } from 'node:fs';
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const canonical = JSON.parse(readFileSync('data/programs.json', 'utf8'));
 const mirror = JSON.parse(readFileSync('extension/lib/valuations.json', 'utf8'));
@@ -462,7 +462,7 @@ Expect `unknown` on a key set where case carries meaning. By default two keys th
 There is no subset option, on purpose: a record that quietly dropped out of the mirror must still be reported. Filter the canonical set to the ids the mirror is meant to carry, taking that list from somewhere other than the mirror itself (a build manifest, a constant in your code). Records the mirror has that the canonical set lacks are still reported as `extra`.
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const programs = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }, { id: 'bilt', v: 3 }];
 const extension = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }];
@@ -479,7 +479,7 @@ const result = compareMirror(
 Passing whole nested locale files makes each top-level section a record and reports every translation as `different`. Compare what a translation must keep instead: build one record per message key, keep only the keys both files have and the translated (non-empty) ones, and compare the placeholders and tags each message contains.
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const tokens = (text: string) => (text.match(/\{[^}]*\}|<\/?\w+>/g) ?? []).sort().join(' ');
 const rows = (messages: Record<string, string>, keys: string[]) =>
@@ -501,7 +501,7 @@ The recipe is for flat placeholders such as `{name}` and tags such as `<b>`. A m
 The kit compares records that each carry one id. A map of id to a single value, a list of strings, or rows identified by two fields have to be turned into that shape first, and each of them reads wrongly if you pass it as it is: a scalar map and a list of strings are every entry `invalid` (`not-an-object`), and rows with a composite identity report `missing-key` or a `duplicateKey`. Build the records yourself:
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 // A map of id to one value: the value goes in a field.
 const fromMap = (map: Record<string, number>) => Object.entries(map).map(([id, value]) => ({ id, value }));
@@ -522,7 +522,7 @@ A composite id joined with a plain separator can collide (`a|b` and `c` against 
 By default two keys that differ only by case (`&AElig;` and `&aelig;`) are look-alikes and make the result `unknown`. For key sets where case carries meaning, such as HTML entity names, pass `foldCase: false`. The trade-off: uppercase look-alike letters from another alphabet (a Cyrillic `А` for a Latin `A`) are then no longer grouped. A renamed key still shows up as `missing` plus `extra`, so nothing passes.
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }];
 const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCase: false });
@@ -534,7 +534,7 @@ const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCa
 By default the variation selectors, the zero-width joiner and the tag characters that build emoji sequences are invisible, so a text heart (U+2764) and an emoji heart (U+2764 U+FE0F) are look-alikes and the result is `unknown`, even against a byte-identical copy. The same goes for composite ids joined by a control character (`us` U+001F `10001` and `us1` U+001F `0001` both collapse to `us10001`). When such keys are what your data is made of, pass `foldInvisible: false`: keys that differ only by an invisible character are then different keys. The trade-off: a key that gains a stray zero-width space is no longer grouped as a look-alike, but it still shows up as `missing` plus `extra`, so nothing passes. NFKC, case, whitespace and dash folding still apply.
 
 ```ts
-import { compareMirror } from 'parity-kit';
+import { compareMirror } from '@evidencekit/drift';
 
 const hearts = [{ id: '\u2764', name: 'red heart' }, { id: '\u2764\ufe0f', name: 'red heart, emoji style' }];
 const exact = compareMirror(hearts, hearts.map((h) => ({ ...h })), { foldInvisible: false });
@@ -546,7 +546,7 @@ const exact = compareMirror(hearts, hearts.map((h) => ({ ...h })), { foldInvisib
 Some real data keeps two keys that differ only by a no-break space, or one record with a date that is known to be wrong. The kit has no allow list or baseline: a waiver is a decision a person made, so it belongs in your repository where it can be reviewed. Filter the result yourself, and keep every other list failing. Name each reviewed group by the keys in it, not by `skeleton`: the skeleton is display text clipped to 40 units, so two different groups with long keys can report the same one, and approving one would approve the other.
 
 ```ts
-import type { Key, MirrorResult } from 'parity-kit';
+import type { Key, MirrorResult } from '@evidencekit/drift';
 
 // One entry per reviewed group: every key in it, as listed in result.suspectKeys[].keys.
 const groupId = (keys: ReadonlyArray<Key>) => JSON.stringify([...new Set(keys.map((key) => JSON.stringify(key)))].sort());

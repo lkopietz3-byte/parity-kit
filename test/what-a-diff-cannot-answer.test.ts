@@ -18,7 +18,7 @@ const kit = (await import(target)) as Record<string, unknown>
 const require = createRequire(import.meta.url)
 const page = readFileSync(join(root, 'docs', 'what-a-diff-cannot-answer.md'), 'utf8')
 const modules = {
-  'parity-kit': kit,
+  '@evidencekit/drift': kit,
   'deep-diff': { default: require('deep-diff') },
   microdiff: { default: microdiff },
 }
@@ -40,6 +40,6 @@ describe('docs/what-a-diff-cannot-answer.md', () => {
     const own = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version
     expect(page).toContain(`\`deep-diff\` ${version('deep-diff')}`)
     expect(page).toContain(`\`microdiff\` ${version('microdiff')}`)
-    expect(page).toContain(`parity-kit ${own}`)
+    expect(page).toContain(`@evidencekit/drift ${own}`)
   })
 })

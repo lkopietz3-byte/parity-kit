@@ -18,7 +18,7 @@ import {
   type StampOptions,
   type Status,
   type SuspectKeyGroup,
-} from 'parity-kit';
+} from '@evidencekit/drift';
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {

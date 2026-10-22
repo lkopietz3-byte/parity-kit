@@ -95,4 +95,4 @@ jobs:
         # The checks above are the checks: skip the lifecycle scripts so the
         # test suite does not run a second time (prepublishOnly runs verify).
         # dist/ is the one the Verify step above built and tested.
-        run: npm publish --ignore-scripts
+        run: npm publish --access public --ignore-scripts

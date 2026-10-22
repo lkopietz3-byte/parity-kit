@@ -1,4 +1,4 @@
-# Where parity-kit and a generic diff agree, and where they do not
+# Where drift and a generic diff agree, and where they do not
 
 `compareMirror` is not a diff library, but on one narrow question it should give
 the same answer as one: which records and fields differ between two sets of

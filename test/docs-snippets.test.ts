@@ -54,7 +54,7 @@ const records = (count: number, over: (i: number) => Record<string, unknown> = (
 
 const SNIPPETS: Snippet[] = [
   {
-    starts: "import { compareMirror, findHandTypedConstants, auditReviewStamps } from 'parity-kit';",
+    starts: "import { compareMirror, findHandTypedConstants, auditReviewStamps } from '@evidencekit/drift';",
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -68,7 +68,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\nconst programsFile",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\nconst programsFile",
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -81,7 +81,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { findHandTypedConstants } from 'parity-kit';\n\nconst sourceText",
+    starts: "import { findHandTypedConstants } from '@evidencekit/drift';\n\nconst sourceText",
     suffix: 'export { hits };',
     check: ({ first }) => {
       const hits = first.out['hits'] as HandTypedMatch[]
@@ -90,7 +90,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { auditReviewStamps } from 'parity-kit';\n\nconst oldSnapshot",
+    starts: "import { auditReviewStamps } from '@evidencekit/drift';\n\nconst oldSnapshot",
     suffix: 'export { audit };',
     check: ({ first }) => {
       const audit = first.out['audit'] as StampAudit
@@ -100,7 +100,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import type { StampAudit } from 'parity-kit';",
+    starts: "import type { StampAudit } from '@evidencekit/drift';",
     suffix: 'export { acceptEvidencedBulk };',
     check: ({ first }) => {
       const accept = first.out['acceptEvidencedBulk'] as (a: StampAudit) => boolean
@@ -145,7 +145,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\nconst programs = [",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\nconst programs = [",
     suffix: 'export { result };',
     check: ({ first }) => {
       expect((first.out['result'] as MirrorResult).ok).toBe(true)
@@ -155,7 +155,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\nconst tokens = (text: string)",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\nconst tokens = (text: string)",
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -165,7 +165,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\n// A map of id to one value:",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\n// A map of id to one value:",
     suffix: 'export { rates, fromMap, fromList, fromRows };',
     check: ({ first }) => {
       const rates = first.out['rates'] as MirrorResult
@@ -185,7 +185,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\nconst entities = [",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\nconst entities = [",
     suffix: 'export { strict, entities };',
     check: ({ first }) => {
       expect((first.out['strict'] as MirrorResult).ok).toBe(true)
@@ -196,7 +196,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import { compareMirror } from 'parity-kit';\n\nconst hearts = [",
+    starts: "import { compareMirror } from '@evidencekit/drift';\n\nconst hearts = [",
     suffix: 'export { exact, hearts };',
     check: ({ first }) => {
       expect((first.out['exact'] as MirrorResult).ok).toBe(true)
@@ -207,7 +207,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "import type { Key, MirrorResult } from 'parity-kit';",
+    starts: "import type { Key, MirrorResult } from '@evidencekit/drift';",
     suffix: 'export { acceptKnownTwins, acceptTwins };',
     check: ({ first }) => {
       const accept = first.out['acceptKnownTwins'] as (r: MirrorResult) => boolean
@@ -276,7 +276,7 @@ function execute(source: string, files: Record<string, string>): Run {
   const sandbox = {
     exports: out,
     require: (name: string): unknown => {
-      if (name === 'parity-kit') return api
+      if (name === '@evidencekit/drift') return api
       if (name === 'node:fs') return fs
       throw new Error(`unexpected import ${name}`)
     },
@@ -305,7 +305,7 @@ describe('README code blocks', () => {
     })
     // The shell blocks are install and project commands. They are listed so a new one has to be looked at.
     const shell = blocks.filter((b) => b.lang === 'sh').map((b) => b.code.trim().split('\n')[0])
-    expect(shell).toEqual(['npm i parity-kit', 'cd parity-kit', 'npm ci'])
+    expect(shell).toEqual(['npm i @evidencekit/drift', 'cd drift', 'npm ci'])
     expect(blocks.filter((b) => b.lang === 'json')).toHaveLength(1)
     // The quick start is one js block and the text block with what it prints; the test below runs it.
     expect(blocks.filter((b) => !['ts', 'sh', 'json', 'js', 'text'].includes(b.lang))).toEqual([])
@@ -341,7 +341,7 @@ describe('README code blocks', () => {
     const indexPath = join(import.meta.dirname, '..', 'src', 'index.ts')
     host.resolveModuleNames = (names, containingFile) =>
       names.map((name) =>
-        name === 'parity-kit'
+        name === '@evidencekit/drift'
           ? { resolvedFileName: indexPath, extension: ts.Extension.Ts }
           : ts.resolveModuleName(name, containingFile, options, host).resolvedModule,
       )
@@ -364,7 +364,7 @@ describe('README code blocks', () => {
     tsBlocks.forEach((block, index) => {
       for (const name of exported) {
         if (!new RegExp(`\\b${name}\\(`).test(block.code)) continue
-        expect(block.code, `ts block ${index + 1} calls ${name}`).toMatch(new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from 'parity-kit'`))
+        expect(block.code, `ts block ${index + 1} calls ${name}`).toMatch(new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from '@evidencekit/drift'`))
       }
     })
   })
@@ -383,7 +383,7 @@ describe('README quick start', () => {
     const cases = findCases(readme)
     expect(cases).toHaveLength(1)
     const [quick] = cases
-    const printed = await runCode(quick?.code ?? '', { 'parity-kit': api })
+    const printed = await runCode(quick?.code ?? '', { '@evidencekit/drift': api })
     expect(printed.trimEnd()).toBe((quick?.expected ?? '').trimEnd())
   })
 })

@@ -3556,7 +3556,7 @@ describe('release-gate:R2: an object-keyed dataset past maxRecords is refused wi
 describe('release-gate:R3: the docs describe the 0.1.0 first publish exactly', () => {
   it('release-gate:R3: CONTRIBUTING and ENGINEERING give the npm trust command and the owner-only fallback', () => {
     const doc = (name: string): string => readFileSync(join(import.meta.dirname, '..', name), 'utf8')
-    const trust = 'npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes'
+    const trust = 'npm trust github @evidencekit/drift --file release.yml --repo evidencekit/drift --allow-publish --yes'
     for (const text of [doc('ENGINEERING.md'), doc('CONTRIBUTING.md')]) {
       expect(text).toContain(trust)
       expect(text).toMatch(/no\s+provenance/)

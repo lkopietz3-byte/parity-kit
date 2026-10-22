@@ -1,5 +1,5 @@
 {
-  "parity-kit": [
+  "@evidencekit/drift": [
     "ParityError",
     "auditReviewStamps",
     "compareMirror",

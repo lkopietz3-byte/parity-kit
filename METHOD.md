@@ -1,12 +1,12 @@
 # Method
 
-How parity-kit reaches each verdict, what it assumes, how often it was wrong on
+How drift reaches each verdict, what it assumes, how often it was wrong on
 labeled data, and how to change every default. Read this before you make the
 kit a gate that blocks a release.
 
 ## What the kit does and does not do
 
-parity-kit checks evidence. Given two sets of records, it reports where the
+drift checks evidence. Given two sets of records, it reports where the
 data shows the copies disagree. Given two snapshots of one set, it reports
 review dates that moved when the data shows no reason for them to move.
 
@@ -99,7 +99,7 @@ copies" look the same as "the registry file failed to load".
 
 A heuristic here is any rule that goes beyond plain equality and so can be
 wrong in both directions. Every number below comes from the labeled benchmark in
-`bench/` in the repository, run on parity-kit 0.1.0 with Node 26.3.0. Read the
+`bench/` in the repository, run on @evidencekit/drift 0.1.0 with Node 26.3.0. Read the
 columns this way:
 
 - **False pass.** The label names a problem and the kit reported nothing about
@@ -203,7 +203,7 @@ measurement, so no error rate is claimed for them:
 
 ## Non-reliance
 
-parity-kit is a data check provided as is, under the MIT license in `LICENSE`.
+drift is a data check provided as is, under the MIT license in `LICENSE`.
 It reports differences and unexplained date changes in the data you give it. It
 does not certify that any data is accurate, current or complete, and it does not
 establish that a review took place. Nothing it prints is legal, regulatory,

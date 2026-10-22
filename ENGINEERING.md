@@ -229,7 +229,7 @@ support on Node 20.19+ / 22.12+).
 
 ## Release status
 
-parity-kit is a public MIT package. `verify:package` checks that the manifest
+drift is a public MIT package. `verify:package` checks that the manifest
 is not private, says `MIT`, names the repository, homepage and bugs URLs, and
 that the tarball ships `LICENSE`, `README.md`, `METHOD.md` and `CHANGELOG.md`
 beside `dist/` and nothing else.
@@ -244,9 +244,9 @@ so the tested `dist/` is what ships and the suite does not run again.
 
 The 0.1.0 path is the one exception to "only through the workflow". npm's docs do not say
 whether a never-published name can be given a trusted publisher. On tag day the owner first
-tries `npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes`.
+tries `npm trust github @evidencekit/drift --file release.yml --repo evidencekit/drift --allow-publish --yes`.
 If npm refuses because the package does not exist, the owner (never an agent) runs
-`npm publish` once from a clean checkout of the tagged commit, which gives 0.1.0 no
+`npm publish --access public` once from a clean checkout of the tagged commit, which gives 0.1.0 no
 provenance. The trusted publisher is not set up that day: npm expires a trusted-publisher
 setting that has no successful publish within 2 days, and the next publish is a release
 away. The owner sets it up on the day of the next release (0.1.1), before pushing the

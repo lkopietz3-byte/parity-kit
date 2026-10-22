@@ -1,6 +1,6 @@
 # Benchmark
 
-This directory holds labeled data and a runner that scores parity-kit against it, so that a claim like "the kit never passed a copy that had drifted" is something anyone can re-run. It is not part of the npm package (`files` in `package.json` leaves it out).
+This directory holds labeled data and a runner that scores drift against it, so that a claim like "the kit never passed a copy that had drifted" is something anyone can re-run. It is not part of the npm package (`files` in `package.json` leaves it out).
 
 ```
 npm run bench

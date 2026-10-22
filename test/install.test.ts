@@ -17,7 +17,7 @@ describe('DR-1: installing from a fresh checkout', () => {
   })
 
   it('DR-1: with no compiler installed the script stops with the exact commands, not "command not found"', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'parity-kit-dr1-'))
+    const dir = mkdtempSync(join(tmpdir(), 'drift-dr1-'))
     try {
       mkdirSync(join(dir, 'scripts'))
       copyFileSync(join(root, 'scripts', 'prepare.mjs'), join(dir, 'scripts', 'prepare.mjs'))
@@ -42,6 +42,6 @@ describe('DR-1: installing from a fresh checkout', () => {
     const install = readme.slice(readme.indexOf('## Install'), readme.indexOf('## Worked example'))
     expect(install.indexOf('npm ci')).toBeGreaterThan(-1)
     expect(install.indexOf('npm run build')).toBeGreaterThan(install.indexOf('npm ci'))
-    expect(install.indexOf('npm install ../parity-kit')).toBeGreaterThan(install.indexOf('npm run build'))
+    expect(install.indexOf('npm install ../drift')).toBeGreaterThan(install.indexOf('npm run build'))
   })
 })

@@ -1,5 +1,5 @@
 /**
- * Why parity-kit refused to run. Everything that is wrong with the whole
+ * Why drift refused to run. Everything that is wrong with the whole
  * call (a bad option, an input that is not a dataset, an input over a size
  * limit) throws one of these. Everything that is wrong with one record is
  * reported in the result instead, so one bad record never hides the others.

@@ -72,9 +72,9 @@ assert.deepEqual(leaked, [], `Tarball contains files that must not ship: ${leake
 // and the tarball must ship the LICENSE file.
 assert.notEqual(pkg.private, true, 'package.json must not be "private": true');
 assert.equal(pkg.license, 'MIT', 'package.json license must be "MIT"');
-assert.equal(pkg.repository?.url, 'git+https://github.com/lkopietz3-byte/parity-kit.git', 'package.json repository.url is wrong');
-assert.equal(pkg.homepage, 'https://github.com/lkopietz3-byte/parity-kit#readme', 'package.json homepage is wrong');
-assert.equal(pkg.bugs?.url, 'https://github.com/lkopietz3-byte/parity-kit/issues', 'package.json bugs.url is wrong');
+assert.equal(pkg.repository?.url, 'git+https://github.com/evidencekit/drift.git', 'package.json repository.url is wrong');
+assert.equal(pkg.homepage, 'https://github.com/evidencekit/drift#readme', 'package.json homepage is wrong');
+assert.equal(pkg.bugs?.url, 'https://github.com/evidencekit/drift/issues', 'package.json bugs.url is wrong');
 for (const required of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md', 'METHOD.md']) {
   assert.ok(packed.includes(required), `Tarball is missing ${required}`);
 }

@@ -15,7 +15,7 @@ import { rewrite } from './lib/doc-blocks.mjs';
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
 const modules = {
-  'parity-kit': await import(pathToFileURL(join(root, 'dist', 'index.js')).href),
+  '@evidencekit/drift': await import(pathToFileURL(join(root, 'dist', 'index.js')).href),
   'deep-diff': { default: require('deep-diff') },
   microdiff: await import('microdiff'),
 };

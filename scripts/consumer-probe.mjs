@@ -7,7 +7,7 @@ import {
   auditReviewStamps,
   compareMirror,
   findHandTypedConstants,
-} from 'parity-kit';
+} from '@evidencekit/drift';
 
 // compareMirror: the drift the kit exists to catch. Same review date, different value.
 const canonical = [{ id: 'chase-ur', baselineCpp: 1.25, reviewedOn: '2026-06-08' }];
@@ -85,4 +85,4 @@ assert.equal(unknown.ok, false);
 assert.equal(unknown.status, 'unknown');
 assert.equal(unknown.unknown[0]?.reason, 'unparseable-date');
 
-console.log('parity-kit consumer probe: all assertions passed');
+console.log('drift consumer probe: all assertions passed');

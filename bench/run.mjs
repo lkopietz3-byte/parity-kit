@@ -71,7 +71,7 @@ const out = {
 };
 
 if (!flag('--quiet')) {
-  console.log(`parity-kit ${pkg.version}, node ${process.version}, tier ${tier}`);
+  console.log(`@evidencekit/drift ${pkg.version}, node ${process.version}, tier ${tier}`);
   console.log(formatTable(summaries));
   const positives = summaries.reduce((a, s) => a + s.positives, 0);
   const falsePass = summaries.reduce((a, s) => a + s.falsePass, 0);

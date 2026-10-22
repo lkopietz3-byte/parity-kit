@@ -1,5 +1,5 @@
 // The `prepare` lifecycle step: it runs when this folder is installed from a
-// checkout (`npm install ./parity-kit`) and builds dist/.
+// checkout (`npm install ./drift`) and builds dist/.
 //
 // A fresh clone has no node_modules and no dist/ (dist/ is not committed), so
 // the compiler is missing and a bare `tsc` call dies with "tsc: command not
@@ -19,7 +19,7 @@ try {
 } catch {
   console.error(
     [
-      'parity-kit: cannot build dist/ because its dev dependencies are not installed here.',
+      'drift: cannot build dist/ because its dev dependencies are not installed here.',
       `Run this once inside ${root} and then install again:`,
       '  npm ci && npm run build',
     ].join('\n'),

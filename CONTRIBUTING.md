@@ -32,7 +32,7 @@ commit message and `CHANGELOG.md`.
 
 ## Publishing
 
-parity-kit is a public MIT package. After 0.1.0, every release goes only through
+drift is a public MIT package. After 0.1.0, every release goes only through
 `.github/workflows/release.yml`: push a `v*` tag whose version matches `package.json`
 and the workflow runs the checks and publishes with npm trusted publishing. Do not push
 tags without the owner's decision. Before tagging, update `CHANGELOG.md` and run
@@ -50,14 +50,14 @@ never runs `npm trust`, `npm login` or `npm publish`):
 1. On tag day the owner first tries to set up trusted publishing for the new name:
 
    ```bash
-   npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes
+   npm trust github @evidencekit/drift --file release.yml --repo evidencekit/drift --allow-publish --yes
    ```
 
    If npm accepts it, there is a pending trusted publisher for `release.yml`. Push the `v0.1.0`
    tag on the green `main` commit and the workflow publishes 0.1.0 with provenance. npm expires
    a trusted-publisher setting that has no successful publish within 2 days, so do this on the
    day of the tag.
-2. If npm refuses because the package does not exist, the owner runs `npm publish` once, by
+2. If npm refuses because the package does not exist, the owner runs `npm publish --access public` once, by
    hand, from a clean checkout of the tagged commit (`git clone`, `git checkout v0.1.0`,
    `npm ci`; the `prepublishOnly` script runs `npm run verify`). That publish has no provenance.
    Do not set up trusted publishing that day: npm expires a trusted-publisher setting that has

@@ -1,7 +1,7 @@
 {
-  "name": "parity-kit",
+  "name": "@evidencekit/drift",
   "version": "0.1.0",
-  "description": "Check that copies of a fact still match their source of truth, and catch review dates that moved with nothing in the data to show a recheck.",
+  "description": "drift checks: finds copies of a fact that drifted from their source of truth, and review dates that moved with nothing in the data to show a recheck.",
   "keywords": [
     "data-parity",
     "mirror",
@@ -11,7 +11,8 @@
     "data-quality",
     "honesty",
     "ci",
-    "honesty-kits",
+    "evidence-kit",
+    "copy-drift",
     "mirror-check",
     "stale-data",
     "dataset-diff",
@@ -22,11 +23,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lkopietz3-byte/parity-kit.git"
+    "url": "git+https://github.com/evidencekit/drift.git"
   },
-  "homepage": "https://github.com/lkopietz3-byte/parity-kit#readme",
+  "homepage": "https://github.com/evidencekit/drift#readme",
   "bugs": {
-    "url": "https://github.com/lkopietz3-byte/parity-kit/issues"
+    "url": "https://github.com/evidencekit/drift/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "type": "module",
   "main": "./dist/index.js",

@@ -2,7 +2,7 @@
 
 ## Posture
 
-parity-kit is a pure TypeScript library. It reads no files, makes no network
+drift is a pure TypeScript library. It reads no files, makes no network
 calls, runs no child processes and reads no clock unless the caller passes
 one. It compares data the caller hands it.
 
@@ -31,7 +31,7 @@ every input is treated as hostile:
 Please report suspected vulnerabilities privately, not in a public issue. Use
 [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)
 on the repository: open the Security tab of
-https://github.com/lkopietz3-byte/parity-kit and choose "Report a vulnerability".
+https://github.com/evidencekit/drift and choose "Report a vulnerability".
 
 The cases that matter most are a crafted input that makes a check pass when it
 should fail, and one that hangs or crashes a call. Please include the affected
