@@ -3029,10 +3029,10 @@ describe('gate-false-pass:GFP-04: printf and format specs are not leading-dot nu
           found(0.5, text)
         }
       },
-      { small: 20_000, large: 80_000 },
+      { small: 20_000, large: 160_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
-  }, 120_000)
+  }, 300_000)
 })
 
 describe('gate-hostile:F2: a thousands group needs a leading group of one to three digits', () => {

@@ -26,9 +26,10 @@ const accelerated = ((): boolean => {
 })()
 
 // Scaling tests. Every "stays linear" test goes through growthRatio (test/growth.ts): CPU time is
-// measured (not wall time), repeated until the small input costs a measurable amount, and the best
-// of five runs is used. Four times the input must cost under GROWTH_LIMIT times the CPU; linear work
-// is about four, quadratic about sixteen. Sizes below are the 4x steps each test is about.
+// measured (not wall time), the small and big inputs are measured in alternation, each sample repeats
+// until the small input costs a measurable amount, and the best sample of each size is used. Eight
+// times the input must cost under GROWTH_LIMIT (20) times the CPU; linear work is about eight and
+// quadratic about sixty-four. Every big size below is 8x its small size.
 
 describe('100k records', () => {
   it('compareMirror reads 100k records on each side and finds one drifted record', () => {
@@ -53,7 +54,7 @@ describe('100k records', () => {
         const b = programs(n)
         return () => compareMirror(a, b)
       },
-      { small: 30_000, large: 120_000 },
+      { small: 30_000, large: 240_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -66,7 +67,7 @@ describe('100k records', () => {
         const b = make(n)
         return () => compareMirror(a, b)
       },
-      { small: 30_000, large: 120_000 },
+      { small: 30_000, large: 240_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
 
@@ -97,7 +98,9 @@ describe('100k records', () => {
         const [before, after] = build(n)
         return () => auditReviewStamps(before, after, o)
       },
-      { small: 30_000, large: 120_000 },
+      // Small is 15_000, not 30_000: this data reads about 18 values per record per side, so 240_000
+      // records pass the default limits.maxNodes (10 million) and throw too-large. 120_000 stays under it.
+      { small: 15_000, large: 120_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -138,7 +141,7 @@ describe('1 MB of text', () => {
         const text = prose(n)
         return () => findHandTypedConstants(text, registry)
       },
-      { small: 250_000, large: 1_000_000 },
+      { small: 250_000, large: 2_000_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -166,7 +169,7 @@ describe('1 MB of text', () => {
         const text = make(n)
         return () => findHandTypedConstants(text, registry)
       },
-      { small: 200_000, large: 800_000 },
+      { small: 200_000, large: 1_600_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -179,7 +182,7 @@ describe('1 MB of text', () => {
         const text = 'a'.repeat(n)
         return () => findHandTypedConstants(text, reg)
       },
-      { small: 200_000, large: 800_000 },
+      { small: 200_000, large: 1_600_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -231,7 +234,7 @@ describe('hostile keys', () => {
         for (let i = 0; i < 20; i += 1) compareMirror(records, records)
       }
     }
-    expect(growthRatio(run, { small: 250_000, large: 1_000_000 })).toBeLessThan(GROWTH_LIMIT)
+    expect(growthRatio(run, { small: 250_000, large: 2_000_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('a key built to make normalization quadratic is refused quickly, whatever maxNodes says', () => {
@@ -293,7 +296,7 @@ describe('hostile keys', () => {
         const b = make(n)
         return () => compareMirror(a, b)
       },
-      { small: 20_000, large: 80_000 },
+      { small: 20_000, large: 160_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -317,7 +320,7 @@ describe('duplicate forms and memory', () => {
         const text = '-'.repeat(n)
         return () => findHandTypedConstants(text, reg)
       },
-      { small: 20_000, large: 80_000 },
+      { small: 20_000, large: 160_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -331,7 +334,7 @@ describe('type suffixes', () => {
         const text = '8_usize 1_000_000_u64 1.25_f64 8_u 1.25_f64x '.repeat(n)
         return () => findHandTypedConstants(text, reg)
       },
-      { small: 2_000, large: 8_000 },
+      { small: 2_000, large: 16_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -345,7 +348,7 @@ describe('empty objects', () => {
         const records = build(n)
         return () => compareMirror(records, records)
       },
-      { small: 1500, large: 6000 },
+      { small: 1500, large: 12_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -396,7 +399,7 @@ describe('empty objects', () => {
         const records = build(n)
         return () => fallback.compareMirror(records, records)
       },
-      { small: 1500, large: 6000 },
+      { small: 1500, large: 12_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
@@ -410,7 +413,7 @@ describe('field-name lists', () => {
       const list = names(n)
       return () => compareMirror([{ id: 'a', v: 1 }], [{ id: 'a', v: 1 }], { fields: ['v', ...list], ignoreFields: list })
     }
-    expect(growthRatio(run, { small: 8000, large: 32_000 })).toBeLessThan(GROWTH_LIMIT)
+    expect(growthRatio(run, { small: 8000, large: 64_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('auditReviewStamps option lists stay linear', () => {
@@ -425,7 +428,7 @@ describe('field-name lists', () => {
           ignoreFields: ignored,
         })
     }
-    expect(growthRatio(run, { small: 8000, large: 32_000 })).toBeLessThan(GROWTH_LIMIT)
+    expect(growthRatio(run, { small: 8000, large: 64_000 })).toBeLessThan(GROWTH_LIMIT)
   })
 
   it('many source fields over many records stay linear in the records', () => {
@@ -439,7 +442,7 @@ describe('field-name lists', () => {
         const [before, after] = build(n)
         return () => auditReviewStamps(before, after, o)
       },
-      { small: 20_000, large: 80_000 },
+      { small: 20_000, large: 160_000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })

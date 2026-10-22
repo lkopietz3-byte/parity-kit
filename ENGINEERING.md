@@ -198,8 +198,11 @@ Tests:
   project against `src/` and runs it with small stand-ins for `process`, `console` and
   `node:fs`. A block added to the README must be added to its table.
 - `test/scaling.test.ts` holds the 100,000-record and 1 MB cases, and ratio
-  checks on CPU time (four times the input must cost well under sixteen times
-  the time).
+  checks on CPU time (eight times the input must cost under twenty times the
+  time; linear is about eight, quadratic about sixty-four). All of them go
+  through `test/growth.ts`, which measures the small and big inputs in
+  alternation and keeps the best sample of each;
+  `test/growth-harness.test.ts` proves it fails a quadratic function.
 - `test/differential.test.ts` checks `compareMirror` against `deep-diff` and
   `microdiff` (dev dependencies only) on seeded datasets, states four
   properties that need no reference, and pins every known disagreement in a

@@ -41,3 +41,4 @@ interface ImportMeta {
 }
 
 declare const performance: { now(): number }
+declare const console: { log(...args: unknown[]): void }
