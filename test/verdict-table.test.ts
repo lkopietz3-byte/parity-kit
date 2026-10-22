@@ -3563,7 +3563,7 @@ describe('release-gate:R3: the docs describe the 0.1.0 first publish exactly', (
       expect(text).toMatch(/0\.1\.1/)
     }
     expect(doc('AGENTS.md')).toMatch(/An agent never runs `npm publish`/)
-    expect(doc('CHANGELOG.md')).toContain('## [0.1.0] - 2026-10-15')
+    expect(doc('CHANGELOG.md')).toContain('## [0.1.0] - 2026-10-21')
   })
 })
 
