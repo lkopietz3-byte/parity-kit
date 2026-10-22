@@ -3401,11 +3401,8 @@ describe('gate documentation findings: README, METHOD, CHANGELOG and ENGINEERING
     const perRecordPerSide = needed(2000) / 2000 / 2
     expect(perRecordPerSide).toBeGreaterThan(16)
     expect(perRecordPerSide).toBeLessThan(19)
-    for (const text of [readme, method]) {
-      expect(text).not.toContain('350,000')
-      expect(text).not.toMatch(/about 14 on each/)
-    }
-    expect(readme).toContain('290,000')
+    // The figures themselves (14 for one more field, 18 for three, and what they imply) are pinned against a
+    // measurement in run9:first5:F08, which replaced the old pins on 290,000 and on the phrase "about 14 on each".
     expect(readFileSync(join(import.meta.dirname, '..', 'src', 'snapshot.ts'), 'utf8')).not.toContain('about 14 per')
   })
 
@@ -3778,5 +3775,150 @@ describe('run9:first5:F11 / F09: a message names the function and says what is w
     expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { foo: 1 } as unknown as MirrorOptions)).message).toBe('compareMirror: unknown option "foo"')
     const long = 'x'.repeat(100_000)
     expect(fail(() => compareMirror([{ id: 'a' }], [{ id: 'a' }], { [long]: 1 })).message).toBe(`compareMirror: unknown option "${long}"`)
+  })
+})
+
+describe('run9: the documents say what the code and the benchmark do', () => {
+  const doc = (name: string): string => readFileSync(join(import.meta.dirname, '..', name), 'utf8')
+  const readme = doc('README.md')
+  const method = doc('METHOD.md')
+  const section = (text: string, from: string, to: string): string => {
+    const start = text.indexOf(from)
+    const end = text.indexOf(to, start + from.length)
+    expect(start, from).toBeGreaterThanOrEqual(0)
+    expect(end, to).toBeGreaterThan(start)
+    return text.slice(start, end)
+  }
+
+  it('run9:first5:F01: the lead, the npm description and AGENTS promise only what the audit can show', () => {
+    const pkg = JSON.parse(doc('package.json')) as { description: string }
+    for (const text of [readme.split('\n')[2] ?? '', pkg.description, doc('AGENTS.md').split('\n')[2] ?? '']) {
+      expect(text).not.toMatch(/earned by an actual recheck/)
+      expect(text).toMatch(/nothing in the data to show a recheck/)
+    }
+    expect(readme).not.toMatch(/Was a review date earned/)
+    // run9:first5:F10: a short, one-sentence npm description.
+    expect(pkg.description.length).toBeLessThan(200)
+    expect(pkg.description.match(/\./g)).toHaveLength(1)
+    // What the lead describes: a date that moved next to an auto-touched field reads as evidence unless the field is ignored.
+    const before = [{ id: 'a', v: 1, lastReviewed: '2026-01-01', updatedAt: '2026-01-01' }]
+    const after = [{ id: 'a', v: 1, lastReviewed: '2026-10-01', updatedAt: '2026-10-01' }]
+    const base = { reviewedField: 'lastReviewed', sourceFields: [] as string[] }
+    expect(auditReviewStamps(before, after, base).status).toBe('ok')
+    expect(auditReviewStamps(before, after, { ...base, ignoreFields: ['updatedAt'] }).stampOnly).toHaveLength(1)
+    expect(readme).toMatch(/Otherwise it counts as evidence of a recheck and hides a stamp-only bump/)
+  })
+
+  it('run9:first5:F02: the README says which labels are weaker, with numbers that match bench/expected.json', () => {
+    const expected = JSON.parse(doc('bench/expected.json')) as Record<string, { counts: Record<string, Record<string, number>> }>
+    let flag = 0
+    let pass = 0
+    let flagFetched = 0
+    let passFetched = 0
+    const parts = { missing: 0, drift: 0 }
+    for (const [name, row] of Object.entries(expected)) {
+      for (const [label, cells] of Object.entries(row.counts)) {
+        const n = Object.values(cells).reduce((a, b) => a + b, 0)
+        const fetched = name.startsWith('fetched/')
+        if (label === 'match') {
+          pass += n
+          if (fetched) passFetched += n
+        } else {
+          flag += n
+          if (fetched) flagFetched += n
+        }
+        if (name === 'compareMirror/i18n-excalidraw' || name === 'compareMirror/i18n-jitsi') {
+          if (label === 'missing') parts.missing += n
+          if (label === 'drift') parts.drift += n
+        }
+      }
+    }
+    const share = (a: number, b: number): string => `${((a / b) * 100).toFixed(1)}%`
+    expect([flag, pass]).toEqual([121_642, 3_287_820])
+    const fmt = (n: number): string => n.toLocaleString('en-US')
+    const line = readme.split('\n').find((l) => l.startsWith('- **The fetched labels are weaker.**')) ?? ''
+    expect(line).toContain(`${fmt(flagFetched)} of the ${fmt(flag)} items that should flag (${share(flagFetched, flag)})`)
+    expect(line).toContain(`${fmt(passFetched)} of the ${fmt(pass)} that should pass (${share(passFetched, pass)})`)
+    expect(line).toMatch(/plain `Map` and `Set` comparison/)
+    expect(line).toContain(`${fmt(parts.missing)} are keys missing from a translation and ${fmt(parts.drift)} are changed`)
+    expect(readme).toMatch(/says what each verdict should be, except in the two fetched locale corpora/)
+    expect(method).toMatch(/exception is the two fetched locale\s+corpora \(62\.8% of the items that should flag and 4\.0% of those that should\s+pass\)/)
+  })
+
+  it('run9:first5:F03: the CI section warns that a case-sensitive key set fails `ok` on an identical copy', () => {
+    const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }]
+    const copy = structuredCopy(entities)
+    expect(compareMirror(entities, copy).status).toBe('unknown')
+    expect(compareMirror(entities, copy, { foldCase: false }).status).toBe('ok')
+    const ci = section(readme, '## Using it in CI', '## Recipes')
+    expect(ci).toMatch(/identical copy of such data comes back `unknown`/)
+    expect(ci).toContain('foldCase: false')
+  })
+
+  it('run9:first5:F06: the Quick start says the example is an ES module before the Why section', () => {
+    const quick = section(readme, '## Quick start', '## Why')
+    expect(quick).toContain('.mjs')
+    expect(quick).toContain('"type": "module"')
+  })
+
+  it('run9:first5:F08: the maxNodes figures match what a record costs, with a nine-character id', () => {
+    const cost = (fields: number): number => {
+      const rows = Array.from({ length: 2000 }, (_, i) => {
+        const row: Record<string, unknown> = { id: String(i).padStart(9, '0') }
+        for (let f = 0; f < fields; f += 1) row[`f${f}`] = f
+        return row
+      })
+      let lo = 1
+      let hi = 5_000_000
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        try {
+          compareMirror(rows, rows, { limits: { maxNodes: mid } })
+          hi = mid
+        } catch {
+          lo = mid + 1
+        }
+      }
+      return lo / 2000 / 2
+    }
+    const one = cost(1)
+    const three = cost(3)
+    // The documents round the capacity down to a multiple of 5,000, so a dataset of that size always fits.
+    const capacity = (perSide: number): string => (Math.floor(10_000_000 / (2 * perSide) / 5000) * 5000).toLocaleString('en-US')
+    for (const text of [readme, method]) {
+      expect(text).toContain(`${capacity(three)} records (${capacity(one)} with one field)`)
+      expect(text).not.toContain('290,000')
+      expect(text).not.toContain('370,000')
+    }
+    expect(readme).toContain(`costs about ${Math.round(one)} on each side with one more field`)
+    expect(readme).toContain(`${Math.round(three)} with three fields`)
+    expect(method).toContain(`about ${Math.round(three)} on each side with a short id and three more fields`)
+    expect(doc('src/snapshot.ts')).toContain(`about ${Math.round(three)} per record per side`)
+  })
+
+  it('run9:first5:F09: the README counts its questions and functions correctly and maps source/copy to canonical/mirror', () => {
+    expect(readme).not.toMatch(/Three functions, one plain report each/)
+    expect(readme).toMatch(/Two questions, three functions\. `compareMirror` and `auditReviewStamps` return a report with `ok` and `status`; `findHandTypedConstants` returns a list of hits\./)
+    expect(readme).toMatch(/the report calls it `canonical`/)
+    expect(readme).toMatch(/the report calls it `mirror`/)
+    const limits = readme.split('\n').find((l) => l.startsWith('| `too-large`')) ?? ''
+    expect(limits).toContain('`maxRecords`')
+    expect(limits).toContain('`maxNodes`')
+    expect(limits).not.toMatch(/\| A limit was passed\. \|/)
+    expect(readme).toMatch(/The word `unknown` appears in three places with one meaning/)
+  })
+
+  it('run9:first5:F10: the worked example prints JSON, as the README shows it', () => {
+    expect(readme).not.toContain('console.error(result);')
+    expect(readme).toContain('console.error(JSON.stringify(result, null, 2));')
+  })
+
+  it('run9:publish-timing: the docs set up the trusted publisher on the day of 0.1.1, not the day of a hand publish of 0.1.0', () => {
+    for (const text of [doc('CONTRIBUTING.md'), doc('ENGINEERING.md')]) {
+      const flat = text.replace(/\s+/g, ' ')
+      expect(flat).toMatch(/no successful publish within 2 days/)
+      expect(flat).toMatch(/the day of the next release \(0\.1\.1\)/)
+      expect(flat).not.toMatch(/sets up trusted publishing (for `release\.yml` )?the same day/)
+    }
   })
 })

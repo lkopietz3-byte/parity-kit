@@ -91,7 +91,7 @@ copies" look the same as "the registry file failed to load".
 | Future grace for a bare date | 14 hours | UTC+14 is the furthest-ahead civil offset, so a bare date may truly be today there. A timestamp with an offset gets none. | Not configurable. |
 | Zoneless timestamp | `unknown` | The kit does not guess a zone. | Add `Z` or an offset. |
 | `maxRecords` | 1,000,000 | Bound work on hostile input. | `limits`. |
-| `maxNodes` | 10,000,000 | Same. A record costs about 17 on each side with a short id and three more fields, so the default ends near 290,000 records (370,000 with one field). | `limits`, raise it for bigger data. |
+| `maxNodes` | 10,000,000 | Same. A record costs about 18 on each side with a short id and three more fields, so the default ends near 275,000 records (355,000 with one field). | `limits`, raise it for bigger data. |
 | `maxDepth` | 64 (at most 1,000) | Same. | `limits`. |
 | `maxKeyLength` | 4,096 (at most 1,048,576) | Same. | `limits`. |
 
@@ -112,8 +112,11 @@ columns this way:
   and a style. Read "0 of 70,230" as "no failure in 70,230 correlated items",
   not as a probability.
 - Labels come from independent scripts written from the README rules, and from
-  construction for the seeded edits. A rule that both the kit and the scripts
-  misread would pass silently. Only the holdout labels were also checked by hand
+  construction for the seeded edits. The exception is the two fetched locale
+  corpora (62.8% of the items that should flag and 4.0% of those that should
+  pass), whose labels are a plain `Map` and `Set` comparison over the same
+  extracted facts: that tests the comparison and not the extraction. A rule that
+  both the kit and the scripts misread would pass silently. Only the holdout labels were also checked by hand
   (69 items).
 
 Full tables are in `bench/RESULTS.md`; the corpora and licenses are in

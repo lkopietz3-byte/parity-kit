@@ -31,29 +31,17 @@ interface Io {
 interface Run {
   out: Record<string, unknown>
   io: Io
+  /** What the block threw, if anything. A block that reads a file nobody provided throws on purpose. */
+  thrown: unknown
 }
 interface Snippet {
   /** The first characters of the block, to catch blocks that moved or changed. */
   starts: string
-  /** Declarations the block assumes (and any imports it does not make itself). */
-  prelude: string
   /** Exports the test reads back. */
   suffix: string
   /** What the block should do. `run(files)` runs it again with other files for `node:fs`. */
   check: (ctx: { first: Run; run: (files?: Record<string, string>) => Run }) => void
 }
-
-const IMPORT_MIRROR = "import { compareMirror } from 'parity-kit';\n"
-
-const programsFile = `const programsFile = { reviewed: '2026-06-08', programs: [
-  { id: 'chase-ur', name: 'Chase Ultimate Rewards', baselineCpp: 1.25 },
-  { id: 'amex-mr', name: 'Amex Membership Rewards', baselineCpp: 1.2 },
-] };
-const extensionFile = { reviewed: '2026-06-08', programs: [
-  { id: 'chase-ur', name: 'Chase Ultimate Rewards', baselineCpp: 1.0 },
-  { id: 'amex-mr', name: 'Amex Membership Rewards', baselineCpp: 1.2 },
-] };
-`
 
 const records = (count: number, over: (i: number) => Record<string, unknown> = () => ({})): Array<Record<string, unknown>> =>
   Array.from({ length: count }, (_, i) => ({
@@ -67,7 +55,6 @@ const records = (count: number, over: (i: number) => Record<string, unknown> = (
 const SNIPPETS: Snippet[] = [
   {
     starts: "import { compareMirror, findHandTypedConstants, auditReviewStamps } from 'parity-kit';",
-    prelude: '',
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -81,8 +68,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: 'const stamp = (file:',
-    prelude: IMPORT_MIRROR + programsFile,
+    starts: "import { compareMirror } from 'parity-kit';\n\nconst programsFile",
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -95,20 +81,16 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "const hits = findHandTypedConstants(",
-    prelude: "import { findHandTypedConstants } from 'parity-kit';\nconst sourceText = 'export const chaseUrCpp = 1.25;\\n';\n",
+    starts: "import { findHandTypedConstants } from 'parity-kit';\n\nconst sourceText",
     suffix: 'export { hits };',
     check: ({ first }) => {
       const hits = first.out['hits'] as HandTypedMatch[]
-      expect(hits[0]).toMatchObject({ id: 'chase-ur.baselineCpp', text: '1.25', line: 1, column: 27, kind: 'number' })
+      // The comment under the call in the README shows exactly this hit.
+      expect(hits).toEqual([{ id: 'chase-ur.baselineCpp', value: 1.25, text: '1.25', index: 26, line: 1, column: 27, kind: 'number' }])
     },
   },
   {
-    starts: 'const audit = auditReviewStamps(',
-    prelude:
-      "import { auditReviewStamps } from 'parity-kit';\n" +
-      "const oldSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-01-01', updatedAt: '2026-01-01T00:00:00Z' }];\n" +
-      "const newSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-06-08', updatedAt: '2026-06-08T00:00:00Z' }];\n",
+    starts: "import { auditReviewStamps } from 'parity-kit';\n\nconst oldSnapshot",
     suffix: 'export { audit };',
     check: ({ first }) => {
       const audit = first.out['audit'] as StampAudit
@@ -119,7 +101,6 @@ const SNIPPETS: Snippet[] = [
   },
   {
     starts: "import type { StampAudit } from 'parity-kit';",
-    prelude: '',
     suffix: 'export { acceptEvidencedBulk };',
     check: ({ first }) => {
       const accept = first.out['acceptEvidencedBulk'] as (a: StampAudit) => boolean
@@ -138,7 +119,6 @@ const SNIPPETS: Snippet[] = [
   },
   {
     starts: "import { readFileSync } from 'node:fs';",
-    prelude: '',
     suffix: '',
     check: ({ first, run }) => {
       // First run: no files were given, so reading throws and the block cannot pass silently.
@@ -165,11 +145,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "const shipped = new Set(",
-    prelude:
-      IMPORT_MIRROR +
-      "const programs = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }, { id: 'bilt', v: 3 }];\n" +
-      "const extension = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }];\n",
+    starts: "import { compareMirror } from 'parity-kit';\n\nconst programs = [",
     suffix: 'export { result };',
     check: ({ first }) => {
       expect((first.out['result'] as MirrorResult).ok).toBe(true)
@@ -179,8 +155,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "const tokens = (text: string)",
-    prelude: IMPORT_MIRROR,
+    starts: "import { compareMirror } from 'parity-kit';\n\nconst tokens = (text: string)",
     suffix: 'export { result };',
     check: ({ first }) => {
       const result = first.out['result'] as MirrorResult
@@ -190,8 +165,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "// A map of id to one value:",
-    prelude: IMPORT_MIRROR,
+    starts: "import { compareMirror } from 'parity-kit';\n\n// A map of id to one value:",
     suffix: 'export { rates, fromMap, fromList, fromRows };',
     check: ({ first }) => {
       const rates = first.out['rates'] as MirrorResult
@@ -211,8 +185,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "const entities = [",
-    prelude: IMPORT_MIRROR,
+    starts: "import { compareMirror } from 'parity-kit';\n\nconst entities = [",
     suffix: 'export { strict, entities };',
     check: ({ first }) => {
       expect((first.out['strict'] as MirrorResult).ok).toBe(true)
@@ -223,8 +196,7 @@ const SNIPPETS: Snippet[] = [
     },
   },
   {
-    starts: "const hearts = [",
-    prelude: IMPORT_MIRROR,
+    starts: "import { compareMirror } from 'parity-kit';\n\nconst hearts = [",
     suffix: 'export { exact, hearts };',
     check: ({ first }) => {
       expect((first.out['exact'] as MirrorResult).ok).toBe(true)
@@ -236,7 +208,6 @@ const SNIPPETS: Snippet[] = [
   },
   {
     starts: "import type { Key, MirrorResult } from 'parity-kit';",
-    prelude: '',
     suffix: 'export { acceptKnownTwins, acceptTwins };',
     check: ({ first }) => {
       const accept = first.out['acceptKnownTwins'] as (r: MirrorResult) => boolean
@@ -284,8 +255,9 @@ declare module 'node:fs' {
 }
 `
 
+// Every block is run exactly as the README prints it, plus one export line so the test can read results back.
 function assemble(snippet: Snippet, code: string): string {
-  return `${snippet.prelude}${code}\n${snippet.suffix}\n`
+  return `${code}\n${snippet.suffix}\n`
 }
 
 function execute(source: string, files: Record<string, string>): Run {
@@ -315,12 +287,14 @@ function execute(source: string, files: Record<string, string>): Run {
       },
     },
   }
+  let thrown: unknown
   try {
     vm.runInNewContext(js, sandbox)
-  } catch {
+  } catch (error) {
     // A block that reads a file nobody provided throws; its check decides if that is expected.
+    thrown = error
   }
-  return { out, io }
+  return { out, io, thrown }
 }
 
 describe('README code blocks', () => {
@@ -375,6 +349,24 @@ describe('README code blocks', () => {
     const diagnostics = ts.getPreEmitDiagnostics(program).filter((d) => d.file === undefined || d.file.fileName.startsWith('/virtual/'))
     const messages = diagnostics.map((d) => `${d.file?.fileName ?? ''}: ${ts.flattenDiagnosticMessageText(d.messageText, '\n')}`)
     expect(messages).toEqual([])
+  })
+
+  it('run9:first5:F05: every block stands alone: pasted as printed, none hits an undefined name or a missing import', () => {
+    tsBlocks.forEach((block, index) => {
+      const { thrown } = execute(assemble(SNIPPETS[index] as Snippet, block.code), {})
+      const name = thrown === undefined || thrown === null ? '' : String((thrown as { name?: unknown }).name)
+      expect(name, `ts block ${index + 1}: ${String((thrown as { message?: unknown } | undefined)?.message)}`).not.toMatch(/^(ReferenceError|SyntaxError|TypeError)$/)
+    })
+  })
+
+  it('run9:first5:F05: every block that uses a kit function imports it, and no block leans on an earlier one', () => {
+    const exported = ['compareMirror', 'findHandTypedConstants', 'auditReviewStamps']
+    tsBlocks.forEach((block, index) => {
+      for (const name of exported) {
+        if (!new RegExp(`\\b${name}\\(`).test(block.code)) continue
+        expect(block.code, `ts block ${index + 1} calls ${name}`).toMatch(new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from 'parity-kit'`))
+      }
+    })
   })
 
   tsBlocks.forEach((block, index) => {

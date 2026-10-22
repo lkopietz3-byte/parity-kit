@@ -1,6 +1,6 @@
 # Parity Kit
 
-Check that every copy of a fact still matches its source of truth, and that a review date was earned by an actual recheck.
+Check that every copy of a fact still matches its source of truth, and catch review dates that moved with nothing in the data to show a recheck.
 
 Zero dependencies, TypeScript, Node 20 or newer. It reads no files, makes no network calls and reads no clock unless you give it a time. MIT license.
 
@@ -10,7 +10,7 @@ npm i parity-kit
 
 ## Quick start
 
-`source` is the data you trust. `copy` is a copy of it that you publish somewhere else.
+`source` is the data you trust (the report calls it `canonical`). `copy` is a copy of it that you publish somewhere else (the report calls it `mirror`). The example is an ES module: save it as `.mjs`, or set `"type": "module"` in your `package.json`. From CommonJS, see Install.
 
 ```js
 import { compareMirror } from 'parity-kit';
@@ -28,12 +28,12 @@ false flagged
 [{"id":"b","field":"price","change":"different","canonical":20,"mirror":25}]
 ```
 
-Three functions, one plain report each:
+Two questions, three functions. `compareMirror` and `auditReviewStamps` return a report with `ok` and `status`; `findHandTypedConstants` returns a list of hits.
 
 1. **Does every copy of a fact still match its source of truth?** `compareMirror` compares a canonical record set to a mirror. `findHandTypedConstants` finds hand-typed copies of registered values in text.
-2. **Was a review date earned by an actual recheck?** `auditReviewStamps` compares two snapshots and reports dates that moved with nothing in the data to show a recheck.
+2. **Did a review date move with nothing in the data to show a recheck?** `auditReviewStamps` compares two snapshots and reports dates that moved with nothing in the data to show a recheck.
 
-It is for developers who keep a source-of-truth data file and publish copies of it (a website, an extension, docs) and want a CI check that fails when the copies drift or a review date moves without a recheck. You hand it data and it hands back a report of what differs. It does not decide which copy is right, prove that a person rechecked anything, or check that a value is true: it checks evidence, and it does not certify truth or compliance (see "What it does not do" and [METHOD.md](METHOD.md)). Part of the honesty kits, a family of small checks for the claims a product makes.
+It is for developers who keep a source-of-truth data file and publish copies of it (a website, an extension, docs) and want a CI check that fails when the copies drift or a review date moves with nothing in the data to show a recheck. You hand it data and it hands back a report of what differs. It does not decide which copy is right, prove that a person rechecked anything, or check that a value is true: it checks evidence, and it does not certify truth or compliance (see "What it does not do" and [METHOD.md](METHOD.md)). Part of the honesty kits, a family of small checks for the claims a product makes.
 
 ## Why
 
@@ -46,7 +46,7 @@ freshness-kit (a sibling kit) scores how old a review date is. This kit asks a d
 
 ## Accuracy on real data
 
-The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be. The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. In a checkout of the repository, `npm run bench` re-runs the vendored tier: 45,205 items that should flag and 3,156,270 that should pass, with 0 false passes and 0 false flags. It does not include the row marked fetched, so it does not print the 121,642 and 3,287,820 totals below. Those need `node bench/fetch/fetch.mjs <dir>` (network access; it downloads two AGPL-3.0 sources that are not copied into the repository) and then `node bench/run.mjs --tier all --cache <dir> --check`; see [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md).
+The kit was scored against labeled public data. An independent script, written from the rules and never importing the kit, says what each verdict should be, except in the two fetched locale corpora, whose labels are weaker (see the first limit below). The counts are for parity-kit 0.1.0, with the benchmark pinned at commit `54a084e` (2026-10-14) and run on Node 26.3.0. In a checkout of the repository, `npm run bench` re-runs the vendored tier: 45,205 items that should flag and 3,156,270 that should pass, with 0 false passes and 0 false flags. It does not include the row marked fetched, so it does not print the 121,642 and 3,287,820 totals below. Those need `node bench/fetch/fetch.mjs <dir>` (network access; it downloads two AGPL-3.0 sources that are not copied into the repository) and then `node bench/run.mjs --tier all --cache <dir> --check`; see [bench/README.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/README.md).
 
 | Corpus | An item is | Should flag | Missed (false pass) | Should pass | Flagged anyway (false flag) |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -62,6 +62,7 @@ Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full tabl
 
 How to read this, and where it stops:
 
+- **The fetched labels are weaker.** The two fetched locale corpora hold 76,437 of the 121,642 items that should flag (62.8%) and 131,550 of the 3,287,820 that should pass (4.0%). Their labels are a plain `Map` and `Set` comparison in `bench/lib/fetched.mjs` over the same placeholders, tags and URLs the kit extracts, so they test the comparison and not the extraction. The independent-script claim above covers the other rows. Of the 27,160 should-flag items in the first locale row, 25,796 are keys missing from a translation and 1,364 are changed placeholders, tags or URLs, so that row scores missing keys far more than changed values.
 - **Items are correlated.** The keys of one locale file share a file and an author. Read "0 of 70,230" as "no failure in 70,230 correlated items", not as a probability. With no failures in `n` items the 95% upper bound is about `3.8 / n`.
 - **Labels can be wrong.** An independent script is a second implementation of the same rules, written by the same people. A rule both misread would pass. Only the holdout labels were also checked by hand (69 items).
 - **The holdout is the blind test.** Its labels and prediction were committed before the kit ran on it. The rest is data the authors have seen, and some rules were changed because of what it showed.
@@ -113,7 +114,7 @@ const extension = [
 
 const result = compareMirror(programs, extension, { reviewedField: 'lastReviewed' });
 if (!result.ok) {
-  console.error(result);
+  console.error(JSON.stringify(result, null, 2));
   process.exit(1);
 }
 ```
@@ -148,6 +149,17 @@ Read it as: the extension lacks `bilt`, has a `cap-one` the source does not, dis
 Real files often keep one `reviewed` date next to a `programs` array, not a date on every record. `compareMirror` compares records, so copy the file date onto each record first and pass the arrays, not the whole files:
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
+const programsFile = {
+  reviewed: '2026-06-08',
+  programs: [{ id: 'chase-ur', baselineCpp: 1.25 }, { id: 'amex-mr', baselineCpp: 1.2 }],
+};
+const extensionFile = {
+  reviewed: '2026-06-08',
+  programs: [{ id: 'chase-ur', baselineCpp: 1.0 }, { id: 'amex-mr', baselineCpp: 1.2 }],
+};
+
 const stamp = (file: { reviewed: string; programs: object[] }) =>
   file.programs.map((p) => ({ ...p, reviewed: file.reviewed }));
 
@@ -160,20 +172,29 @@ With the 1.25 versus 1.0 example above, both files say `reviewed: "2026-06-08"` 
 To stop the next hand-typed copy, scan source files and docs for the registered value:
 
 ```ts
+import { findHandTypedConstants } from 'parity-kit';
+
+const sourceText = 'export const chaseUrCpp = 1.25;\n';
 const hits = findHandTypedConstants(sourceText, [{ id: 'chase-ur.baselineCpp', value: 1.25 }]);
-// [{ id: 'chase-ur.baselineCpp', text: '1.25', line: 1, column: 27, kind: 'number', ... }, ...]
+// [{ id: 'chase-ur.baselineCpp', value: 1.25, text: '1.25', index: 26, line: 1, column: 27, kind: 'number' }]
 ```
 
 To check a registry change, compare the old and new snapshots:
 
 ```ts
+import { auditReviewStamps } from 'parity-kit';
+
+const oldSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-01-01', updatedAt: '2026-01-01T00:00:00Z' }];
+const newSnapshot = [{ id: 'chase-ur', baselineCpp: 1.25, source: 'https://example.test/a', lastReviewed: '2026-06-08', updatedAt: '2026-06-08T00:00:00Z' }];
+
 const audit = auditReviewStamps(oldSnapshot, newSnapshot, {
   reviewedField: 'lastReviewed',
   sourceFields: ['source'],
   now: '2026-10-10T12:00:00Z', // optional; future dates are only checked when you pass it
   ignoreFields: ['updatedAt'], // see the note below
 });
-// audit.stampOnly, audit.bulkBump, audit.future, audit.backward, audit.unknown, ...
+// audit.stampOnly: [{ id: 'chase-ur', from: '2026-01-01', to: '2026-06-08' }]
+// also audit.bulkBump, audit.future, audit.backward, audit.unknown, ...
 ```
 
 If a field changes by itself whenever a record is touched (`updatedAt`, a version counter), list it in `ignoreFields`. Otherwise it counts as evidence of a recheck and hides a stamp-only bump. A name in `ignoreFields` that matches no record is reported in `unknownFields` and the audit is `unknown`, so a typo cannot quietly turn the exclusion off. Do not share one `ignoreFields` list between datasets that carry different fields: a name one of them lacks is reported for that dataset and its audit is `unknown`, because the kit cannot tell a typo from a field a dataset legitimately lacks. Give each dataset the list that fits it.
@@ -256,6 +277,8 @@ Returns `ok`, `status`, `compared`, and:
 | `duplicateKeys`, `suspectKeys`, `invalid` | As in `compareMirror`. |
 
 `status` is `flagged` when `stampOnly`, `bulkBump`, `future`, `backward`, `extendedDeadlines` or `duplicateKeys` has anything in it. Otherwise it is `unknown` when `noOverlap` is `true` or `unknown`, `invalid`, `suspectKeys` or `unknownFields` has anything in it. Otherwise it is `ok`.
+
+The word `unknown` appears in three places with one meaning, "could not be judged": the `status` of a whole result, the audit's `unknown` list (dates that cannot be judged), and `unknownFields` (names you gave that matched no record).
 
 ## Exact rules
 
@@ -379,10 +402,10 @@ Everything wrong with **the whole call** throws `ParityError` (it has a `code`):
 
 | Code | When |
 | --- | --- |
-| `bad-options` | A misspelled or unknown option, a wrong type, a missing required option, an invalid `now` (including one outside the years 0001 to 9999), an argument past the documented ones. |
-| `bad-input` | An argument that is not an array or plain object (`null`, a string, a `Map`), or text that is not a string. |
+| `bad-options` | A misspelled or unknown option (the message names the closest real option), a wrong type, a missing required option, an invalid `now` (including one outside the years 0001 to 9999), an argument past the documented ones. |
+| `bad-input` | A dataset argument that is missing (`compareMirror(canonical)` without the mirror) or is not an array or plain object (`null`, a string, a `Map`), or text that is not a string. The message starts with the function name and names the argument. |
 | `unreadable-input` | Reading the argument itself threw (a revoked Proxy, a throwing `length`). |
-| `too-large` | A limit was passed. |
+| `too-large` | A size limit was passed: more than `maxRecords` records in one dataset, or more than `maxNodes` values read in one call. The message names the option that raises it. |
 | `bad-registry` | A malformed hand-typed-constant registry. |
 
 Everything wrong with **one record** is reported in `invalid` instead, so one bad record never hides the others. Reasons: `empty-dataset`, `hole`, `not-an-object`, `not-a-plain-object`, `missing-key`, `bad-key`, `key-too-long`, `key-unnormalizable`, `key-mismatch`, `unreadable`, `unsupported-value`, `too-deep`, `cycle`.
@@ -394,7 +417,7 @@ Limits (`limits: { maxRecords, maxNodes, maxDepth, maxKeyLength }`):
 | Limit | Default | Meaning |
 | --- | --- | --- |
 | `maxRecords` | 1,000,000 | Most records in one dataset. For an id-keyed object only own enumerable string keys are records; a non-enumerable or symbol-keyed property is not counted. Usually the node budget below ends a large dataset first. |
-| `maxNodes` | 10,000,000 | Most values read in one call, across both datasets, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this, and never below 1,000. A record with an id of about nine characters costs about 13 on each side with one more field, and 2 more for each further field: 17 with three fields, so the default ends a pair of ordinary datasets near 290,000 records (370,000 with one field), well before `maxRecords`. Measured on records shaped like the worked example; a longer id costs more. Raise `maxNodes` for bigger data (the error message says so). |
+| `maxNodes` | 10,000,000 | Most values read in one call, across both datasets, counting every probe for a named field whether or not the record has it. Arrays and objects are capped at a fifth of this, and never below 1,000. A record with an id of about nine characters costs about 14 on each side with one more field, and 2 more for each further field: 18 with three fields, so the default ends a pair of ordinary datasets near 275,000 records (355,000 with one field), well before `maxRecords`. Measured on records shaped like the worked example; a longer id costs more. Raise `maxNodes` for bigger data (the error message says so). |
 | `maxKeyLength` | 4,096 (at most 1,048,576) | Longest string key, in UTF-16 units. A longer key, or a key with a run of more than 32 combining marks, counted after compatibility decomposition (Unicode normalization is quadratic in such a run), makes its record `invalid` with `key-too-long` or `key-unnormalizable`; it is never analyzed for look-alikes. Key lengths count against `maxNodes`: a key counts by its UTF-16 length, or by the size of its compatibility decomposition when that is larger (U+FDFA is one unit and eighteen code points), so the budget bounds the CPU a key costs and not only its length. In an id-keyed object the name is checked before its getter runs. |
 | `maxDepth` | 64 (at most 1000) | Most levels of arrays and objects inside one field of a record. A container directly in a field is level 1, so `maxDepth: 1` allows `{ v: {} }` and `{ v: [1, 2] }` but not `{ v: { x: {} } }`. |
 
@@ -430,6 +453,8 @@ if (!result.ok) {
 
 The replacer prints a `bigint` value as text (`10n`); `JSON.stringify` without it throws on one, which would end the step before it printed the report. Treat `status: 'unknown'` as a failure too. `ok` already does. A gate that passes when it could not read something is not a gate.
 
+Expect `unknown` on a key set where case carries meaning. By default two keys that differ only by case (`&AElig;` and `&aelig;`) are look-alikes, so even an identical copy of such data comes back `unknown` and a gate on `ok` fails it. Pass `foldCase: false` for that data (see Case-sensitive keys under Recipes).
+
 ## Recipes
 
 ### A mirror that carries only some of the records
@@ -437,6 +462,11 @@ The replacer prints a `bigint` value as text (`10n`); `JSON.stringify` without i
 There is no subset option, on purpose: a record that quietly dropped out of the mirror must still be reported. Filter the canonical set to the ids the mirror is meant to carry, taking that list from somewhere other than the mirror itself (a build manifest, a constant in your code). Records the mirror has that the canonical set lacks are still reported as `extra`.
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
+const programs = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }, { id: 'bilt', v: 3 }];
+const extension = [{ id: 'chase-ur', v: 1 }, { id: 'amex-mr', v: 2 }];
+
 const shipped = new Set(['chase-ur', 'amex-mr']);
 const result = compareMirror(
   programs.filter((p) => shipped.has(p.id)),
@@ -449,6 +479,8 @@ const result = compareMirror(
 Passing whole nested locale files makes each top-level section a record and reports every translation as `different`. Compare what a translation must keep instead: build one record per message key, keep only the keys both files have and the translated (non-empty) ones, and compare the placeholders and tags each message contains.
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
 const tokens = (text: string) => (text.match(/\{[^}]*\}|<\/?\w+>/g) ?? []).sort().join(' ');
 const rows = (messages: Record<string, string>, keys: string[]) =>
   keys.map((id) => ({ id, tokens: tokens(messages[id] ?? '') }));
@@ -469,6 +501,8 @@ The recipe is for flat placeholders such as `{name}` and tags such as `<b>`. A m
 The kit compares records that each carry one id. A map of id to a single value, a list of strings, or rows identified by two fields have to be turned into that shape first, and each of them reads wrongly if you pass it as it is: a scalar map and a list of strings are every entry `invalid` (`not-an-object`), and rows with a composite identity report `missing-key` or a `duplicateKey`. Build the records yourself:
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
 // A map of id to one value: the value goes in a field.
 const fromMap = (map: Record<string, number>) => Object.entries(map).map(([id, value]) => ({ id, value }));
 // A list of strings: the string is the id.
@@ -488,6 +522,8 @@ A composite id joined with a plain separator can collide (`a|b` and `c` against 
 By default two keys that differ only by case (`&AElig;` and `&aelig;`) are look-alikes and make the result `unknown`. For key sets where case carries meaning, such as HTML entity names, pass `foldCase: false`. The trade-off: uppercase look-alike letters from another alphabet (a Cyrillic `А` for a Latin `A`) are then no longer grouped. A renamed key still shows up as `missing` plus `extra`, so nothing passes.
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
 const entities = [{ id: '&AElig;', cp: 198 }, { id: '&aelig;', cp: 230 }];
 const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCase: false });
 // strict.ok is true; without foldCase: false the result is unknown with one suspectKeys group
@@ -498,6 +534,8 @@ const strict = compareMirror(entities, entities.map((e) => ({ ...e })), { foldCa
 By default the variation selectors, the zero-width joiner and the tag characters that build emoji sequences are invisible, so a text heart (U+2764) and an emoji heart (U+2764 U+FE0F) are look-alikes and the result is `unknown`, even against a byte-identical copy. The same goes for composite ids joined by a control character (`us` U+001F `10001` and `us1` U+001F `0001` both collapse to `us10001`). When such keys are what your data is made of, pass `foldInvisible: false`: keys that differ only by an invisible character are then different keys. The trade-off: a key that gains a stray zero-width space is no longer grouped as a look-alike, but it still shows up as `missing` plus `extra`, so nothing passes. NFKC, case, whitespace and dash folding still apply.
 
 ```ts
+import { compareMirror } from 'parity-kit';
+
 const hearts = [{ id: '\u2764', name: 'red heart' }, { id: '\u2764\ufe0f', name: 'red heart, emoji style' }];
 const exact = compareMirror(hearts, hearts.map((h) => ({ ...h })), { foldInvisible: false });
 // exact.ok is true; without foldInvisible: false the two hearts are one suspectKeys group and the result is unknown

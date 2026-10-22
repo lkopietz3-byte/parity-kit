@@ -48,7 +48,9 @@ First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newe
   that compared nothing is never `ok`.
 - `ParityError` with codes `bad-options`, `bad-input`, `unreadable-input`, `too-large` and
   `bad-registry` for problems with the whole call. A misspelled option or registry key throws
-  instead of quietly turning a check off, and so does an argument past the documented ones.
+  instead of quietly turning a check off (the message names the closest real option), and so
+  does an argument past the documented ones. Every message starts with the function name; a
+  missing dataset says which one and shows the call.
 - Hostile-input handling: Proxies, throwing and flip-flopping getters (each read once),
   inherited `toJSON`, null-prototype records, cross-realm Dates and plain objects (an empty `{}`
   from another realm included on Node; where `util.types` is missing it reads as

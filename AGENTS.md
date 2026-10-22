@@ -1,6 +1,6 @@
 # parity-kit: agent instructions
 
-Check that every copy of a fact still matches its source of truth, and that a review date was earned by an actual recheck. Compares a canonical record set to its mirrors, finds hand-typed copies of registered constants in text, and audits review stamps between two snapshots. Zero-dependency, framework-agnostic TypeScript.
+Check that every copy of a fact still matches its source of truth, and catch review dates that moved with nothing in the data to show a recheck. Compares a canonical record set to its mirrors, finds hand-typed copies of registered constants in text, and audits review stamps between two snapshots. Zero-dependency, framework-agnostic TypeScript.
 
 ## Read first
 - `ENGINEERING.md` holds this package's invariants and design rules; read it before changing behavior.
