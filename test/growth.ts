@@ -17,6 +17,14 @@
 /** Growth ratios at or above this fail. Linear is about 4, quadratic about 16. */
 export const GROWTH_LIMIT = 10
 
+/**
+ * costRatio results at or above this fail: a shape may cost a few times its plain equivalent, not a
+ * dozen. Work that costs a dozen times its baseline reads well above it, and the kit's empty-object
+ * column reads about 3 to 4 on a quiet machine (about 30 before run9:first5:F04), so the margin on
+ * both sides covers a busy machine.
+ */
+export const COST_RATIO_LIMIT = 10
+
 /** Wall-clock target for the repeated small run, in seconds. */
 const MIN_SECONDS = 0.06
 const MAX_REPEATS = 2_000
@@ -46,14 +54,34 @@ export function growthRatio(make: (n: number) => () => void, sizes: { small: num
   const large = make(sizes.large)
   small()
   large()
-  // The fastest of a few warm calls, in wall-clock time: a pause from another process only ever
-  // makes a call look slower, so the minimum is the honest cost and the repeat count stays stable.
+  const repeats = repeatsFor(small)
+  return cpuSeconds(large, repeats) / Math.max(cpuSeconds(small, repeats), FLOOR_SECONDS)
+}
+
+/**
+ * How many times `fn` must repeat to cost about MIN_SECONDS. The fastest of a few warm calls, in
+ * wall-clock time: a pause from another process only ever makes a call look slower, so the minimum
+ * is the honest cost and the repeat count stays stable. (Wall-clock time only sizes the repeat
+ * count; every ratio is read from CPU time.)
+ */
+function repeatsFor(fn: () => void): number {
   let wall = Infinity
   for (let i = 0; i < 5; i++) {
     const started = performance.now()
-    small()
+    fn()
     wall = Math.min(wall, (performance.now() - started) / 1000)
   }
-  const repeats = Math.min(MAX_REPEATS, Math.max(1, Math.ceil(MIN_SECONDS / Math.max(wall, 1e-6))))
-  return cpuSeconds(large, repeats) / Math.max(cpuSeconds(small, repeats), FLOOR_SECONDS)
+  return Math.min(MAX_REPEATS, Math.max(1, Math.ceil(MIN_SECONDS / Math.max(wall, 1e-6))))
+}
+
+/**
+ * CPU time of `costly` divided by CPU time of `baseline`, both warmed up and repeated the same
+ * number of times (sized on `baseline`). For "this input shape must not cost many times more than
+ * its plain equivalent" tests, where growthRatio (one function, two sizes) does not apply.
+ */
+export function costRatio(costly: () => void, baseline: () => void): number {
+  costly()
+  baseline()
+  const repeats = repeatsFor(baseline)
+  return cpuSeconds(costly, repeats) / Math.max(cpuSeconds(baseline, repeats), FLOOR_SECONDS)
 }

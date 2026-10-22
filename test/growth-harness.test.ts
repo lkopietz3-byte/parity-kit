@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GROWTH_LIMIT, growthRatio } from './growth.js'
+import { COST_RATIO_LIMIT, GROWTH_LIMIT, costRatio, growthRatio } from './growth.js'
 
 // The harness in test/growth.ts must keep failing a quadratic function at GROWTH_LIMIT, and keep
 // passing a linear one, however its repeat count or floor are tuned.
@@ -36,5 +36,15 @@ describe('the growth harness', { timeout: 120_000 }, () => {
       { small: 1500, large: 6000 },
     )
     expect(quadratic).toBeGreaterThan(GROWTH_LIMIT)
+  })
+
+  it('costRatio fails work that costs twenty times its baseline and passes work that costs about the same', () => {
+    const spin = (times: number) => () => {
+      let acc = 0
+      for (let i = 0; i < times; i++) acc = (acc + i) | 0
+      expect(acc).not.toBe(-1)
+    }
+    expect(costRatio(spin(20_000_000), spin(1_000_000))).toBeGreaterThan(COST_RATIO_LIMIT)
+    expect(costRatio(spin(1_500_000), spin(1_000_000))).toBeLessThan(COST_RATIO_LIMIT)
   })
 })

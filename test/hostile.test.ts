@@ -659,6 +659,59 @@ describe('without Error.isError (Node before 24), in a fresh process', () => {
   }, 600_000)
 })
 
+describe('without process.getBuiltinModule (a browser, Node before 20.16), in a fresh process', () => {
+  it('run9:hunt:R9-2: the conservative reading holds: an empty object on a foreign or custom prototype and a Promise stay unsupported', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'parity-noutiltypes-'))
+    try {
+      const root = join(import.meta.dirname, '..')
+      execFileSync(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', join(root, 'tsconfig.build.json'), '--outDir', dir, '--sourceMap', 'false', '--declaration', 'false', '--declarationMap', 'false', '--inlineSources', 'false'], { encoding: 'utf8', cwd: root })
+      const script = `
+        import vm from 'node:vm';
+        delete process.getBuiltinModule;
+        if (typeof process.getBuiltinModule !== 'undefined') throw new Error('getBuiltinModule still present');
+        const { compareMirror } = await import(${JSON.stringify(`file://${join(dir, 'index.js')}`)});
+        const reasons = (v) => compareMirror([{ id: 'a', v }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason);
+        let thenCalls = 0;
+        const custom = Object.create(null, { then: { value() { thenCalls += 1; throw new Error('then'); } } });
+        const promiseOnCustom = Object.setPrototypeOf(Promise.resolve(1), custom);
+        let getterRuns = 0;
+        const promiseWithGetter = Object.defineProperty(Object.setPrototypeOf(Promise.resolve(1), null), 'constructor', { get() { getterRuns += 1; throw new Error('no'); } });
+        const out = {
+          customProto: reasons(Object.create(Object.create(null))),
+          foreignEmpty: reasons(vm.runInNewContext('({})')),
+          foreignPopulated: compareMirror([{ id: 'a', v: vm.runInNewContext('({ x: 1 })') }], [{ id: 'a', v: { x: 1 } }]).ok,
+          promiseOnCustom: reasons(promiseOnCustom),
+          promiseWithGetter: reasons(promiseWithGetter),
+          nullPromise: reasons(Object.setPrototypeOf(Promise.resolve(1), null)),
+          map: reasons(Object.setPrototypeOf(new Map(), null)),
+          weakRef: reasons(Object.setPrototypeOf(new WeakRef({}), null)),
+          plain: compareMirror([{ id: 'a', v: {} }], [{ id: 'a', v: Object.create(null) }]).ok,
+          thenCalls,
+          getterRuns,
+        };
+        console.log(JSON.stringify(out));
+      `
+      const text = execFileSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8' })
+      const out = JSON.parse(text.trim().split('\n').pop() ?? '{}') as Record<string, unknown>
+      expect(out).toEqual({
+        customProto: ['unsupported-value'],
+        foreignEmpty: ['unsupported-value'],
+        foreignPopulated: true,
+        promiseOnCustom: ['unsupported-value'],
+        promiseWithGetter: ['unsupported-value'],
+        nullPromise: ['unsupported-value'],
+        map: ['unsupported-value'],
+        weakRef: ['unsupported-value'],
+        plain: true,
+        thenCalls: 0,
+        getterRuns: 0,
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 600_000)
+})
+
 describe('a record with nothing selected reads each property descriptor once and no excluded value', () => {
   it('descriptor reads', () => {
     const reads = new Map<string, number>()

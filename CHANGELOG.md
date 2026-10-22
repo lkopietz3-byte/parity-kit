@@ -50,8 +50,11 @@ First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newe
   `bad-registry` for problems with the whole call. A misspelled option or registry key throws
   instead of quietly turning a check off, and so does an argument past the documented ones.
 - Hostile-input handling: Proxies, throwing and flip-flopping getters (each read once),
-  inherited `toJSON`, null-prototype records, cross-realm Dates and plain objects, 100,000-level
-  nesting, shared-structure blow-ups, 100,000-record arrays and a polluted `Object.prototype`.
+  inherited `toJSON`, null-prototype records, cross-realm Dates and plain objects (an empty `{}`
+  from another realm included on Node; where `util.types` is missing it reads as
+  `unsupported-value`), 100,000-level nesting, shared-structure blow-ups, 100,000-record arrays
+  and a polluted `Object.prototype`. An empty-object column costs about 12 microseconds of CPU
+  per object on Node.
   Work is bounded by `maxRecords`, `maxNodes`, `maxDepth` and `maxKeyLength`; a key is
   charged by the size of its Unicode decomposition, not only its length.
 - `METHOD.md`: every verdict and default with its reason and how to change it, each heuristic

@@ -1295,6 +1295,10 @@ describe('compareMirror: native objects whose prototype was replaced', () => {
 
   it('a real Promise is not touched in a way that leaves it unhandled', () => {
     const p = Promise.reject(new Error('later'))
+    // The test handles its own rejection. Where util.types rules a Promise out by a slot check (run9:hunt:R9-2) the kit
+    // never calls `then`, so it no longer marks the caller's rejected Promise as handled by accident; without util.types
+    // the probe still calls `then(noop, noop)`, which leaves no new unhandled rejection either.
+    p.catch(() => undefined)
     compareMirror([{ id: 'a', v: swapped(p, null) }], [{ id: 'a', v: {} }])
   })
 })
@@ -1378,6 +1382,8 @@ describe('compareMirror: a Promise whose probe fails after it was recognized is 
 // Fix round 4: rows added after review of 2f5e295
 // ---------------------------------------------------------------------------
 
+const hasUtilTypes = typeof (process as unknown as { getBuiltinModule?: unknown }).getBuiltinModule === 'function'
+
 describe('compareMirror: the Promise probe is only attempted when it provably cannot run caller code', () => {
   const reasons = (v: object): string[] => compareMirror([{ id: 'a', v }], [{ id: 'a', v: {} }]).invalid.map((i) => i.reason)
   const promiseWith = (proto: object | null, constructorValue?: PropertyDescriptor): object => {
@@ -1411,11 +1417,14 @@ describe('compareMirror: the Promise probe is only attempted when it provably ca
     expect(reasons(promiseWith(custom))).toEqual(['unsupported-value'])
   })
 
-  it('an empty object on any prototype other than null or Object.prototype cannot be ruled out, so it is unsupported', () => {
+  // Changed by run9:hunt:R9-2 (a deliberate verdict change, named in the commit): with util.types a Promise is ruled
+  // out by a slot check, so these two inputs are ordinary data. The conservative reading they used to pin still holds
+  // where util.types is missing; test/hostile.test.ts pins it in a fresh process without `process.getBuiltinModule`.
+  it.skipIf(!hasUtilTypes)('an empty object on a custom prototype or from another realm is ordinary data where a slot check rules a Promise out', () => {
     const custom = Object.create(Object.create(null) as object) as object
-    expect(reasons(custom)).toEqual(['unsupported-value'])
+    expect(reasons(custom)).toEqual([])
     const other = vm.runInNewContext('({})') as object
-    expect(reasons(other)).toEqual(['unsupported-value'])
+    expect(reasons(other)).toEqual([])
   })
 
   it('ordinary empty objects, and a populated object from another realm, still pass', () => {
@@ -3558,5 +3567,46 @@ describe('release-gate:R3: the docs describe the 0.1.0 first publish exactly', (
     }
     expect(doc('AGENTS.md')).toMatch(/An agent never runs `npm publish`/)
     expect(doc('CHANGELOG.md')).toContain('## [0.1.0] - 2026-10-15')
+  })
+})
+
+describe('run9:hunt:R9-2: an empty object from another realm is plain data', () => {
+  const foreign = (code: string): unknown => vm.runInNewContext(code)
+
+  it.skipIf(!hasUtilTypes)('run9:hunt:R9-2: compareMirror reads an empty {} and an empty Object.create(null) from another realm as plain data', () => {
+    for (const code of ['({})', 'Object.create(null)']) {
+      const r = compareMirror([{ id: 'a', meta: {} }], [{ id: 'a', meta: foreign(code) }])
+      expect(r.invalid).toEqual([])
+      expect(r.status).toBe('ok')
+      // Both sides from the other realm, as a Jest vm sandbox hands them over.
+      expect(compareMirror(foreign("[{ id: 'a', meta: {} }]"), foreign("[{ id: 'a', meta: {} }]")).status).toBe('ok')
+    }
+  })
+
+  it.skipIf(!hasUtilTypes)('run9:hunt:R9-2: an empty object from another realm still differs from a populated one', () => {
+    const r = compareMirror([{ id: 'a', meta: foreign('({})') }], [{ id: 'a', meta: { x: 1 } }])
+    expect(r.status).toBe('flagged')
+    expect(r.changed).toHaveLength(1)
+  })
+
+  it.skipIf(!hasUtilTypes)('run9:hunt:R9-2: auditReviewStamps reads it the same way', () => {
+    const before = [{ id: 'a', lastReviewed: '2026-01-01', meta: foreign('({})') }]
+    const after = [{ id: 'a', lastReviewed: '2026-01-01', meta: foreign('({})') }]
+    const r = auditReviewStamps(before, after, { reviewedField: 'lastReviewed', sourceFields: [] })
+    expect(r.invalid).toEqual([])
+    expect(r.status).toBe('ok')
+  })
+
+  it('run9:hunt:R9-2: a built-in from another realm that has lost its prototype is still unsupported', () => {
+    for (const code of [
+      'Object.setPrototypeOf(new Map(), null)',
+      'Object.setPrototypeOf(Promise.resolve(1), null)',
+      'Object.setPrototypeOf(new WeakRef({}), null)',
+      'Object.setPrototypeOf(new Error("x"), null)',
+      'Object.setPrototypeOf(/x/, null)',
+    ]) {
+      const r = compareMirror([{ id: 'a', meta: foreign(code) }], [{ id: 'a', meta: {} }])
+      expect(r.invalid.map((i) => i.reason), code).toEqual(['unsupported-value'])
+    }
   })
 })

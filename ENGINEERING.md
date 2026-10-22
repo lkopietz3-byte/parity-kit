@@ -76,19 +76,28 @@ imports a `node:` module, so it is browser-safe.
   An object with a plain prototype and **at least one own enumerable property
   is plain data**, whatever else it carries (a hidden non-enumerable property
   does not change that). Only an object with **no own enumerable property**
-  is probed for being a built-in whose prototype was replaced (`src/brand.ts`:
-  captured built-in methods that only succeed on a real instance). That probe
-  throws internally and costs about 0.2 ms of CPU per empty-looking object
-  (measured on a loaded machine; no quiet-machine figure is verified);
-  it does not change any global (no `Error.stackTraceLimit`), and it is linear.
-  The probe also refuses an empty object whose prototype is neither `null` nor
-  this realm's untouched `Object.prototype` (an empty object from another
-  realm is therefore unsupported), because a Promise cannot be ruled out there.
+  is probed for being a built-in whose prototype was replaced (`src/brand.ts`).
+  Where Node provides `util.types` (fetched once at load through
+  `process.getBuiltinModule`, not an import) the probe is internal-slot tests that run no
+  caller code and throw nothing, except `WeakRef` and `FinalizationRegistry`, which
+  `util.types` cannot recognize and which are probed with a captured method that throws on
+  anything else: two thrown TypeErrors per empty-looking object, about 12 microseconds
+  of CPU in all (`run9:first5:F04` holds an empty-object column to under six times the cost of
+  an empty-array column; measured on a loaded machine, no quiet-machine figure is verified).
+  Without `util.types` (a browser, Node before 20.16 or 22.3) every built-in is probed with a
+  captured method that only succeeds on a real instance: about fifteen thrown TypeErrors, about
+  70 microseconds per object. Neither changes any global (no `Error.stackTraceLimit`), and both are linear.
+  Without `util.types` the probe also refuses an empty object whose prototype is neither `null` nor
+  this realm's untouched `Object.prototype` (an empty object from another realm is unsupported
+  there), because a Promise cannot be ruled out; with it a Promise is recognized by slot, so an
+  empty object on any prototype is plain data (`run9:hunt:R9-2`).
   This is the last exotic-object class the kit fixes: Proxies are read through
   their traps, and built-ins or host objects disguised with a replaced
   prototype and own enumerable properties are read as plain data. Further finds
   of that kind are documented, not fixed.
-- **Probes that cannot be pure have a precondition.** Recognizing a Promise
+- **Probes that cannot be pure have a precondition.** With `util.types` there are none:
+  a Promise is recognized by `util.types.isPromise` and the kit never calls `then`, so it also
+  never marks a caller's rejected Promise as handled. Without it, recognizing a Promise
   calls `then`, which looks up `constructor`: it is called only when the
   object has no own `constructor` (or an own data one holding `undefined`) and
   its prototype is `null` or the untouched `Object.prototype`. Without
@@ -116,8 +125,9 @@ imports a `node:` module, so it is browser-safe.
   own-property reads, and the descriptor that copies a value into a report has a `null`
   prototype (an inherited `get` or `set` would be taken for an accessor). The pollution
   matrix in `gate-false-pass:GFP-05` pins `get`, `set`, `value`, `id`, `path` and `detail`.
-  Two kinds remain by design: a polluted `Object.prototype.constructor` makes an empty `{}`
-  `unsupported-value` (the conservative reading, because a Promise cannot be ruled out), and
+  Two kinds remain by design: without `util.types`, a polluted `Object.prototype.constructor` makes an
+  empty `{}` `unsupported-value` (the conservative reading, because a Promise cannot be ruled out; with
+  `util.types` the empty `{}` is read as plain data), and
   a polluted `Array.prototype.constructor` makes the array methods the kit uses throw a
   `TypeError` (the species lookup). Both fail closed; neither returns a verdict.
 - **Aliased objects are read once per appearance.** The same object under two fields is

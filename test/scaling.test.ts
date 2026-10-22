@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
-import { GROWTH_LIMIT, growthRatio } from './growth.js'
+import { COST_RATIO_LIMIT, GROWTH_LIMIT, costRatio, growthRatio } from './growth.js'
 import { cpuMs, program, programs } from './helpers.js'
 
 vi.setConfig({ testTimeout: 600_000 })
@@ -314,6 +314,20 @@ describe('empty objects', () => {
       { small: 1500, large: 6000 },
     )
     expect(r).toBeLessThan(GROWTH_LIMIT)
+  })
+
+  it('run9:first5:F04: an empty-object column costs about what an empty-array column costs', () => {
+    // Before the fix every empty object paid about fifteen thrown TypeErrors (one per built-in it was
+    // probed against) and the column cost about thirty times the same data with [] in this test.
+    const records = (empty: () => unknown): Array<{ id: string; name: string; tags: unknown }> =>
+      Array.from({ length: 2000 }, (_, i) => ({ id: `r${i}`, name: `n${i}`, tags: empty() }))
+    const objects = records(() => ({}))
+    const arrays = records(() => [])
+    const ratio = costRatio(
+      () => compareMirror(objects, objects),
+      () => compareMirror(arrays, arrays),
+    )
+    expect(ratio).toBeLessThan(COST_RATIO_LIMIT)
   })
 })
 
