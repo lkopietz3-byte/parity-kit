@@ -86,6 +86,20 @@ describe('bench results page', () => {
   })
 })
 
+describe('documented overlap of the should-pass totals', () => {
+  it('2,947,088 should-pass items re-score the same 533,837 advisory pairs, as README, METHOD and RESULTS say', () => {
+    const shouldPass = (id: string): number => Object.values(expected[id]?.counts.match ?? {}).reduce((a, b) => a + b, 0)
+    const rescored = Object.keys(expected).filter((id) => /^auditReviewStamps\/pypa-(history|option-variants)\//.test(id))
+    expect(rescored.reduce((a, id) => a + shouldPass(id), 0)).toBe(2_947_088)
+    const offline = Object.keys(expected).filter((id) => !id.startsWith('fetched/')).reduce((a, id) => a + shouldPass(id), 0)
+    expect(offline).toBe(3_156_270)
+    expect(Math.round((offline - 2_947_088 + 533_837) / 1000)).toBe(743)
+    for (const name of ['README.md', 'METHOD.md', join('bench', 'RESULTS.md')]) {
+      expect(readFileSync(join(bench, '..', name), 'utf8')).toMatch(/2,947,088[^]*?533,837[^]*?about 743,000/)
+    }
+  })
+})
+
 describe('bench data files', () => {
   const manifest = JSON.parse(readFileSync(join(bench, 'data', 'manifest.json'), 'utf8')) as { files: Record<string, { sha256: string; bytes: number }> }
 

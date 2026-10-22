@@ -144,7 +144,9 @@ include the two fetched locale corpora. `npm run bench` runs the vendored tier
 only (45,205 and 3,156,270); the fetched tier needs `node bench/fetch/fetch.mjs <dir>`
 and then `node bench/run.mjs --tier all --cache <dir>` (`bench/README.md`). The class
 rows overlap (the same pair is scored once per flag), so these are counts of
-verdicts, not of distinct items.
+verdicts, not of distinct items. Of the should-pass items, 2,947,088 (in both the
+3,156,270 and the 3,287,820) re-score the same 533,837 advisory record pairs once per
+rule or option set; counting each pair once, the 3,156,270 is about 743,000 distinct items.
 
 ### Not measured
 

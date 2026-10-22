@@ -37,7 +37,7 @@ export function renderResults(pinned) {
     lines.push(`| ${label} | ${num(p)} | ${num(fp)} (${pct(p === 0 ? null : fp / p)}) | ${num(n)} | ${num(ff)} (${pct(n === 0 ? null : ff / n)}) | ${num(total(rows, 'abstainPositive') + total(rows, 'abstainNegative'))} |`);
   }
   lines.push('');
-  lines.push('The class rows below overlap (the same stamp pair is scored once per flag, the same table once per option set), so these totals count verdicts, not distinct items. Abstain counts items the kit called `unknown`; a whole file that comes back `unknown` because of look-alike keys still gives a verdict for every key, and is listed in that class\'s run facts (`resultStatus`, `itemsInLookalikeGroups`).', '');
+  lines.push('The class rows below overlap (the same stamp pair is scored once per flag, the same table once per option set), so these totals count verdicts, not distinct items. Of the should-pass items, 2,947,088 (in both totals) re-score the same 533,837 advisory record pairs once per rule or option set; counting each pair once, the offline total is about 743,000 distinct items. Abstain counts items the kit called `unknown`; a whole file that comes back `unknown` because of look-alike keys still gives a verdict for every key, and is listed in that class\'s run facts (`resultStatus`, `itemsInLookalikeGroups`).', '');
   for (const [, title, test] of GROUPS) {
     const rows = summaries.filter((s) => test(s.id));
     if (rows.length === 0) continue;

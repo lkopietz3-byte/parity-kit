@@ -56,9 +56,9 @@ The kit was scored against labeled public data. An independent script, written f
 | 200 advisories against their OSV.dev copies | a field | 675 | 0 | 951 | 0 |
 | Fresh holdout: Gitea strings, IANA status phrases, SPDX licenses | an id, per copy | 7,526 | 0 | 37,965 | 0 |
 | 400 advisory texts | a digit run equal to a registered number | 306 | 0 | 479 | 0 |
-| Advisory history, 75 snapshot pairs (three stamp rules) | a record pair, per rule | 315 | 0 | 533,667 to 533,837 per rule | 0 |
+| Advisory history, 75 snapshot pairs (five rule classes) | a record pair, per rule | 315 | 0 | 533,667 to 533,837 per rule | 0 |
 
-Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full table, with a 95% interval on every rate, is in [bench/RESULTS.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/RESULTS.md). Across every class the pinned run has 0 false passes in 121,642 items that should flag and 0 false flags in 3,287,820 items that should pass. The class rows overlap (the same stamp pair is scored once per rule), so those totals count verdicts, not distinct items.
+Seeded edits, price grids and 40 hand-chosen stamps add more rows. The full table, with a 95% interval on every rate, is in [bench/RESULTS.md](https://github.com/lkopietz3-byte/parity-kit/blob/main/bench/RESULTS.md). Across every class the pinned run has 0 false passes in 121,642 items that should flag and 0 false flags in 3,287,820 items that should pass. The class rows overlap (the same stamp pair is scored once per rule), so those totals count verdicts, not distinct items. Of the should-pass items, 2,947,088 (in both the 3,156,270 and the 3,287,820 totals) re-score the same 533,837 advisory record pairs once per rule or option set; counting each pair once, the 3,156,270 is about 743,000 distinct items.
 
 How to read this, and where it stops:
 

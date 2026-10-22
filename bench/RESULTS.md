@@ -9,7 +9,7 @@ Generated from `bench/expected.json` by `node bench/run.mjs --update-expected`; 
 | Reproduced offline (everything but the fetched sources) | 45,205 | 0 (0.000%) | 3,156,270 | 0 (0.000%) | 0 |
 | All, with the fetched sources | 121,642 | 0 (0.000%) | 3,287,820 | 0 (0.000%) | 0 |
 
-The class rows below overlap (the same stamp pair is scored once per flag, the same table once per option set), so these totals count verdicts, not distinct items. Abstain counts items the kit called `unknown`; a whole file that comes back `unknown` because of look-alike keys still gives a verdict for every key, and is listed in that class's run facts (`resultStatus`, `itemsInLookalikeGroups`).
+The class rows below overlap (the same stamp pair is scored once per flag, the same table once per option set), so these totals count verdicts, not distinct items. Of the should-pass items, 2,947,088 (in both totals) re-score the same 533,837 advisory record pairs once per rule or option set; counting each pair once, the offline total is about 743,000 distinct items. Abstain counts items the kit called `unknown`; a whole file that comes back `unknown` because of look-alike keys still gives a verdict for every key, and is listed in that class's run facts (`resultStatus`, `itemsInLookalikeGroups`).
 
 ## Mirror comparison (`compareMirror`), real sources
 
