@@ -54,15 +54,18 @@ never runs `npm trust`, `npm login` or `npm publish`):
    ```
 
    If npm accepts it, there is a pending trusted publisher for `release.yml`. Push the `v0.1.0`
-   tag on the green `main` commit and the workflow publishes 0.1.0 with provenance. An unused
-   setting expires, so do this on the day of the tag.
+   tag on the green `main` commit and the workflow publishes 0.1.0 with provenance. npm expires
+   a trusted-publisher setting that has no successful publish within 2 days, so do this on the
+   day of the tag.
 2. If npm refuses because the package does not exist, the owner runs `npm publish` once, by
    hand, from a clean checkout of the tagged commit (`git clone`, `git checkout v0.1.0`,
    `npm ci`; the `prepublishOnly` script runs `npm run verify`). That publish has no provenance.
-   The owner then sets up trusted publishing for `release.yml` the same day with the `npm trust`
-   command above, now that the package exists. Version 0.1.1 and every later one publish from
-   the tag with provenance. Pushing the `v0.1.0` tag afterward is safe: the workflow skips a
-   version that is already on the registry.
+   Do not set up trusted publishing that day: npm expires a trusted-publisher setting that has
+   no successful publish within 2 days, and the next publish is a whole release away. On the
+   day of the next release (0.1.1), before pushing the `v0.1.1` tag, the owner runs the `npm
+   trust` command above (the package exists by then), so the tag publishes 0.1.1 with provenance
+   inside the 2 days. Every later release publishes the same way. Pushing the `v0.1.0` tag after
+   the hand publish is safe: the workflow skips a version that is already on the registry.
 
 The README links to `bench/` files under `blob/main`, which resolve once the release branch
 is merged to `main`.

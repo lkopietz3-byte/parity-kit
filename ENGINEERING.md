@@ -244,6 +244,9 @@ whether a never-published name can be given a trusted publisher. On tag day the 
 tries `npm trust github parity-kit --file release.yml --repo lkopietz3-byte/parity-kit --allow-publish --yes`.
 If npm refuses because the package does not exist, the owner (never an agent) runs
 `npm publish` once from a clean checkout of the tagged commit, which gives 0.1.0 no
-provenance, then sets up trusted publishing the same day, so 0.1.1 onward publish from the
-tag with provenance. Every later release goes only through `release.yml`; nobody runs
-`npm publish` by hand again (`CONTRIBUTING.md` has the steps).
+provenance. The trusted publisher is not set up that day: npm expires a trusted-publisher
+setting that has no successful publish within 2 days, and the next publish is a release
+away. The owner sets it up on the day of the next release (0.1.1), before pushing the
+`v0.1.1` tag, so 0.1.1 onward publish from the tag with provenance. Every later release goes
+only through `release.yml`; nobody runs `npm publish` by hand again (`CONTRIBUTING.md` has
+the steps).
