@@ -81,9 +81,9 @@ imports a `node:` module, so it is browser-safe.
   `process.getBuiltinModule`, not an import) the probe is internal-slot tests that run no
   caller code and throw nothing, except `WeakRef` and `FinalizationRegistry`, which
   `util.types` cannot recognize and which are probed with a captured method that throws on
-  anything else: two thrown TypeErrors per empty-looking object, about 12 microseconds
-  of CPU in all (`run9:first5:F04` holds an empty-object column to under six times the cost of
-  an empty-array column; measured on a loaded machine, no quiet-machine figure is verified).
+  anything else: two thrown TypeErrors per empty-looking object (`run9:first5:F04` counts
+  the thrown probes and holds them to four per object, so it does not depend on a clock;
+  the CPU cost is not asserted).
   Without `util.types` (a browser, Node before 20.16 or 22.3) every built-in is probed with a
   captured method that only succeeds on a real instance: about fifteen thrown TypeErrors, about
   70 microseconds per object. Neither changes any global (no `Error.stackTraceLimit`), and both are linear.

@@ -1,7 +1,7 @@
 import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import { auditReviewStamps, compareMirror, findHandTypedConstants } from '../src/index.js'
-import { COST_RATIO_LIMIT, GROWTH_LIMIT, costRatio, growthRatio } from './growth.js'
+import { GROWTH_LIMIT, growthRatio } from './growth.js'
 import { cpuMs, program, programs } from './helpers.js'
 
 vi.setConfig({ testTimeout: 600_000 })
@@ -337,6 +337,9 @@ describe('type suffixes', () => {
   })
 })
 
+// The accelerated path throws two probes per empty object; the fallback throws about fifteen. Four sits between them.
+const MAX_THROWN_PROBES_PER_EMPTY_OBJECT = 4
+
 describe('empty objects', () => {
   it('100k records with empty-object fields stay linear', () => {
     const build = (n: number): Array<{ id: string; tags: object; meta: object }> => Array.from({ length: n }, (_, i) => ({ id: `r${i}`, tags: {}, meta: Object.create(null) as object }))
@@ -350,18 +353,38 @@ describe('empty objects', () => {
     expect(r).toBeLessThan(GROWTH_LIMIT)
   })
 
-  it.skipIf(!accelerated)('run9:first5:F04: an empty-object column costs about what an empty-array column costs', () => {
-    // Before the fix every empty object paid about fifteen thrown TypeErrors (one per built-in it was
-    // probed against) and the column cost about thirty times the same data with [] in this test.
+  it.skipIf(!accelerated)('run9:first5:F04: an empty-object column pays a fixed, small number of thrown probes per object', () => {
+    // Before the fix every empty object paid about fifteen thrown TypeErrors (one per built-in it was probed
+    // against). With slot checks it pays two (WeakRef and FinalizationRegistry). The probes run through
+    // Reflect.apply, so counting the calls that throw counts the cost without a clock: the count is the same on
+    // a quiet laptop and a loaded CI runner. An empty-array column throws nothing.
     const records = (empty: () => unknown): Array<{ id: string; name: string; tags: unknown }> =>
-      Array.from({ length: 2000 }, (_, i) => ({ id: `r${i}`, name: `n${i}`, tags: empty() }))
+      Array.from({ length: 200 }, (_, i) => ({ id: `r${i}`, name: `n${i}`, tags: empty() }))
+    const thrownInside = (run: () => void): number => {
+      const real = Reflect.apply
+      let thrown = 0
+      Reflect.apply = ((...args: Parameters<typeof Reflect.apply>): unknown => {
+        try {
+          return real(...args)
+        } catch (error) {
+          thrown += 1
+          throw error
+        }
+      }) as typeof Reflect.apply
+      try {
+        run()
+      } finally {
+        Reflect.apply = real
+      }
+      return thrown
+    }
     const objects = records(() => ({}))
     const arrays = records(() => [])
-    const ratio = costRatio(
-      () => compareMirror(objects, objects),
-      () => compareMirror(arrays, arrays),
-    )
-    expect(ratio).toBeLessThan(COST_RATIO_LIMIT)
+    const emptyObjectsRead = objects.length * 2 // compareMirror reads both sides
+    expect(thrownInside(() => compareMirror(arrays, arrays))).toBe(0)
+    const perObject = thrownInside(() => compareMirror(objects, objects)) / emptyObjectsRead
+    expect(perObject).toBeGreaterThan(0) // the counter sees the probes, so a zero cannot hide a broken counter
+    expect(perObject).toBeLessThanOrEqual(MAX_THROWN_PROBES_PER_EMPTY_OBJECT)
   })
 
   // Found failing by run10 Codex review P2: the F04 cost ratio measured 32.1 (26.4 here) with
