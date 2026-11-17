@@ -37,25 +37,24 @@ export function cpuSeconds(fn: () => void, repeats = 1, runs = RUNS): number {
 }
 
 /**
- * Up to this many full measurements per call. Noise only ever adds CPU time to the large input (or
- * removes none from the small one), so one honest low reading is evidence of linear growth; a
- * quadratic function reads about 16 on every attempt. A passing reading stops the loop, so a quiet
- * machine pays for one measurement.
+ * Full measurements per call. The median is returned, so one noisy reading cannot move the
+ * result either way: a spike cannot fail a linear function, and one low reading cannot pass a
+ * quadratic one. Linear reads about 4 and quadratic about 16.
  */
 const ATTEMPTS = 3
 
 /**
- * CPU time for the large input divided by CPU time for the small one: the lowest of up to ATTEMPTS
- * measurements, stopping at the first one under GROWTH_LIMIT. `make(n)` builds the input for size n
+ * CPU time for the large input divided by CPU time for the small one: the median of ATTEMPTS
+ * measurements. `make(n)` builds the input for size n
  * outside the timing and returns the function to measure. Both are run once first, so the
  * measurement is of warmed-up code. Pass the 4x sizes the test is about.
  */
 export function growthRatio(make: (n: number) => () => void, sizes: { small: number; large: number }): number {
   const small = make(sizes.small)
   const large = make(sizes.large)
-  let best = Infinity
-  for (let attempt = 0; attempt < ATTEMPTS && best >= GROWTH_LIMIT; attempt++) best = Math.min(best, measureOnce(small, large))
-  return best
+  const ratios = Array.from({ length: ATTEMPTS }, () => measureOnce(small, large)).sort((a, b) => a - b)
+  // NaN fails every comparison, so an empty result can never pass a check.
+  return ratios[Math.floor(ATTEMPTS / 2)] ?? Number.NaN
 }
 
 function measureOnce(small: () => void, large: () => void): number {
