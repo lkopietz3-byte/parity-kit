@@ -305,7 +305,7 @@ describe('README code blocks', () => {
     })
     // The shell blocks are install and project commands. They are listed so a new one has to be looked at.
     const shell = blocks.filter((b) => b.lang === 'sh').map((b) => b.code.trim().split('\n')[0])
-    expect(shell).toEqual(['git clone https://github.com/lkopietz3-byte/parity-kit', 'npm ci'])
+    expect(shell).toEqual(['npm i parity-kit', 'npm ci'])
     expect(blocks.filter((b) => b.lang === 'json')).toHaveLength(1)
     // The quick start is one js block and the text block with what it prints; the test below runs it.
     expect(blocks.filter((b) => !['ts', 'sh', 'json', 'js', 'text'].includes(b.lang))).toEqual([])
