@@ -4,9 +4,7 @@ Check that every copy of a fact still matches its source of truth, and catch rev
 
 Zero dependencies, TypeScript, Node 20 or newer. It reads no files, makes no network calls and reads no clock unless you give it a time. MIT license.
 
-```sh
-npm i parity-kit
-```
+Not on npm yet: npm publishing is pending, so `npm i parity-kit` does not work today. Install it from a clone of this repository (see [Install](#install)).
 
 ## Quick start
 
@@ -74,7 +72,7 @@ How to read this, and where it stops:
 
 ## Install
 
-`npm i parity-kit`. Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser.
+Not published to npm yet; npm publishing is pending. Install from a clone of this repository (below). Node 20 or newer. ESM only. No runtime dependencies. Nothing in `src` imports `node:` modules, so it also runs in a browser. The import lines in this README use the package name `parity-kit`, which is what your project sees after the source install.
 
 | How you load it | Works on |
 | --- | --- |
@@ -83,9 +81,10 @@ How to read this, and where it stops:
 
 The continuous-integration matrix builds and tests on Node 20, 20.19.0, 22, 22.12.0 and 24.
 
-To install from a checkout of the repository instead of the registry, build it once first. A fresh checkout has no compiler and no `dist/`:
+Build the clone once before you install it. A fresh clone has no compiler and no `dist/`:
 
 ```sh
+git clone https://github.com/lkopietz3-byte/parity-kit
 cd parity-kit
 npm ci && npm run build         # once, inside the checkout
 cd ../your-project
