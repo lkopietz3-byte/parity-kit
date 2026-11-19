@@ -1,6 +1,6 @@
 {
   "name": "parity-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Check that copies of a fact still match their source of truth, and catch review dates that moved with nothing in the data to show a recheck.",
   "keywords": [
     "data-parity",
