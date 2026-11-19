@@ -7,7 +7,7 @@ on the first case below and then part ways.
 
 Twelve cases follow. Each one runs the same data through `deep-diff` 1.0.2 and
 `microdiff` 1.6.0 (the two are used as stand-ins for any generic diff) and
-through parity-kit 0.1.0, and prints what each says. Two cases are ties, and
+through parity-kit 0.1.1, and prints what each says. Two cases are ties, and
 the rest show something the diff has no way to say. Every block is run by
 `test/what-a-diff-cannot-answer.test.ts`, which also compares each printed
 result with the text under it, so this page cannot drift from the code.

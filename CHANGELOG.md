@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-19
+
+No change to the package code. The behavior and the public API are the same as 0.1.0.
+
+### Changed
+
+- The README on npm now shows the install line `npm i parity-kit`. The 0.1.0 page still said the package was not on npm yet and showed a source install.
+- The linear-time tests are stable on shared continuous-integration runners. All CPU-growth checks go through one harness that measures the small and big inputs in alternation, uses an eight times step, and fails only past a ratio of 20 (linear is about 8, quadratic about 64). The test that proves the harness fails a quadratic function was extended.
+- `ENGINEERING.md` describes the new growth checks, and `docs/what-a-diff-cannot-answer.md` names the version it is run with.
+
 ## [0.1.0] - 2026-10-21
 
 First release. MIT license. Zero runtime dependencies, ESM only, Node 20 or newer.
