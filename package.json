@@ -1,7 +1,7 @@
 {
   "name": "parity-kit",
   "version": "0.1.2",
-  "description": "Compare the copies you supply with your source data. Flag review dates that moved without a matching change in the data.",
+  "description": "Check that the copies you supply still match your source data, and catch review dates that moved with nothing in the data to show a recheck.",
   "keywords": [
     "data-parity",
     "mirror",

@@ -1,8 +1,8 @@
 # Parity Kit
 
-This README is long, and npm cuts it off partway. If the page stops early, read the [full version on GitHub](https://github.com/lkopietz3-byte/parity-kit/blob/main/README.md).
+Check that the copies you supply still match your source data, and catch review dates that moved with nothing in the data to show a recheck.
 
-Compare the copies you supply with your source data. Flag review dates that moved without a matching change in the data.
+This README is long, and npm cuts it off partway. If the page stops early, read the [full version on GitHub](https://github.com/lkopietz3-byte/parity-kit/blob/main/README.md).
 
 Zero dependencies, TypeScript, Node 20 or newer. It reads no files, makes no network calls and reads no clock unless you give it a time. MIT license.
 

@@ -14,7 +14,8 @@ Documentation only. The package code and API are the same as 0.1.1.
 ### Changed
 
 - The README points to its full version on GitHub, since npm cuts long READMEs off.
-- The README lead and package description say the kit compares the copies you supply and flags review dates that moved without a data change.
+- The README lead and package description say the kit checks the copies you supply, not every copy of a fact.
+- `docs/what-a-diff-cannot-answer.md` names the version it is run with.
 
 ## [0.1.1] - 2026-11-19
 
