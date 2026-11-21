@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-20
+
+Documentation only. The package code and API are the same as 0.1.1.
+
+### Changed
+
+- The README points to its full version on GitHub, since npm cuts long READMEs off.
+- The README lead and package description say the kit compares the copies you supply and flags review dates that moved without a data change.
+
 ## [0.1.1] - 2026-11-19
 
 No change to the package code. The behavior and the public API are the same as 0.1.0.
